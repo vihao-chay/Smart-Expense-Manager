@@ -1,20 +1,58 @@
 import 'package:flutter/material.dart';
 
+import 'app/app_routes.dart';
+import 'core/theme/app_theme.dart';
+import 'screens/add_transaction/add_transaction_screen.dart';
+import 'screens/auth/forgot_password_screen.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'screens/budget/budget_management_screen.dart';
+import 'screens/currency_converter/currency_converter_screen.dart';
+import 'screens/edit_transaction/edit_transaction_screen.dart';
+import 'screens/home/home_screen.dart';
+import 'screens/notifications/notifications_screen.dart';
+import 'screens/onboarding/onboarding_screen.dart';
+import 'screens/profile/profile_screen.dart';
+import 'screens/settings/settings_screen.dart';
+import 'screens/splash/splash_screen.dart';
+import 'screens/statistics/statistics_screen.dart';
+import 'screens/transaction_detail/transaction_detail_screen.dart';
+import 'screens/transactions/transactions_screen.dart';
+
 void main() {
-  runApp(const MainApp());
+  runApp(const SmartExpenseManagerApp());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class SmartExpenseManagerApp extends StatelessWidget {
+  const SmartExpenseManagerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
-        ),
-      ),
+    return MaterialApp(
+      title: 'Smart Expense Manager',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      initialRoute: AppRoutes.splash,
+      routes: {
+        AppRoutes.splash: (context) => const SplashScreen(),
+        AppRoutes.login: (context) => const LoginScreen(),
+        AppRoutes.onboarding: (context) => const OnboardingScreen(),
+        AppRoutes.home: (context) => const HomeScreen(),
+        AppRoutes.addTransaction: (context) => const AddTransactionScreen(),
+        AppRoutes.editTransaction: (context) => const EditTransactionScreen(),
+        AppRoutes.currencyConverter: (context) =>
+            const CurrencyConverterScreen(),
+        AppRoutes.budgetManagement: (context) => const BudgetManagementScreen(),
+        AppRoutes.transactions: (context) => const TransactionsScreen(),
+        AppRoutes.transactionDetail: (context) =>
+            const TransactionDetailScreen(),
+        AppRoutes.notifications: (context) => const NotificationsScreen(),
+        AppRoutes.statistics: (context) => const StatisticsScreen(),
+        AppRoutes.profile: (context) => const ProfileScreen(),
+        AppRoutes.settings: (context) => const SettingsScreen(),
+        AppRoutes.register: (context) => const RegisterScreen(),
+        AppRoutes.forgotPassword: (context) => const ForgotPasswordScreen(),
+      },
     );
   }
 }

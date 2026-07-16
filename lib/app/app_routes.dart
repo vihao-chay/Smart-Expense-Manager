@@ -1,0 +1,18 @@
+abstract final class AppRoutes {
+  static const splash = '/';
+  static const login = '/login';
+  static const onboarding = '/onboarding';
+  static const home = '/home';
+  static const addTransaction = '/add-transaction';
+  static const editTransaction = '/edit-transaction';
+  static const currencyConverter = '/currency-converter';
+  static const budgetManagement = '/budget-management';
+  static const transactions = '/transactions';
+  static const transactionDetail = '/transaction-detail';
+  static const notifications = '/notifications';
+  static const statistics = '/statistics';
+  static const profile = '/profile';
+  static const settings = '/settings';
+  static const register = '/register';
+  static const forgotPassword = '/forgot-password';
+}
