@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -17,11 +20,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _authRepository = AuthRepository();
+  final _firestoreRepository = FirestoreRepository();
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _acceptedTerms = false;
   bool _showTermsError = false;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -32,7 +38,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
     final isFormValid = _formKey.currentState?.validate() ?? false;
     setState(() {
       _showTermsError = !_acceptedTerms;
@@ -43,11 +50,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Form hợp lệ. Sẵn sàng kết nối Firebase Authentication.'),
-      ),
-    );
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await _authRepository.register(
+        fullName: _nameController.text,
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đăng ký tài khoản thành công.')),
+      );
+      Navigator.of(context).pushReplacementNamed(AppRoutes.onboarding);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _continueWithGoogle() async {
+    if (_isSubmitting) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isSubmitting = true;
+      _showTermsError = false;
+    });
+
+    try {
+      await _authRepository.signInWithGoogle();
+      final profile = await _firestoreRepository.fetchProfile();
+      if (!mounted) return;
+      final route = profile != null && profile.hasCompletedOnboarding
+          ? AppRoutes.home
+          : AppRoutes.onboarding;
+      Navigator.of(context).pushReplacementNamed(route);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -96,6 +156,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       _obscureConfirmPassword,
                                   acceptedTerms: _acceptedTerms,
                                   showTermsError: _showTermsError,
+                                  isSubmitting: _isSubmitting,
                                   onTogglePassword: () {
                                     setState(() {
                                       _obscurePassword = !_obscurePassword;
@@ -116,6 +177,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     });
                                   },
                                   onSubmit: _submit,
+                                  onGoogleSignIn: _continueWithGoogle,
                                 ),
                               ],
                             ),
@@ -185,10 +247,12 @@ class _RegisterCard extends StatelessWidget {
     required this.obscureConfirmPassword,
     required this.acceptedTerms,
     required this.showTermsError,
+    required this.isSubmitting,
     required this.onTogglePassword,
     required this.onToggleConfirmPassword,
     required this.onTermsChanged,
     required this.onSubmit,
+    required this.onGoogleSignIn,
   });
 
   final GlobalKey<FormState> formKey;
@@ -200,10 +264,12 @@ class _RegisterCard extends StatelessWidget {
   final bool obscureConfirmPassword;
   final bool acceptedTerms;
   final bool showTermsError;
+  final bool isSubmitting;
   final VoidCallback onTogglePassword;
   final VoidCallback onToggleConfirmPassword;
   final ValueChanged<bool?> onTermsChanged;
   final VoidCallback onSubmit;
+  final VoidCallback onGoogleSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -336,9 +402,9 @@ class _RegisterCard extends StatelessWidget {
             onChanged: onTermsChanged,
           ),
           const SizedBox(height: 16),
-          _PrimaryRegisterButton(onPressed: onSubmit),
+          _PrimaryRegisterButton(isLoading: isSubmitting, onPressed: onSubmit),
           const _AuthDivider(),
-          const _GoogleButton(),
+          _GoogleButton(isLoading: isSubmitting, onPressed: onGoogleSignIn),
           const SizedBox(height: 24),
           const _LoginFooter(),
         ],
@@ -540,8 +606,12 @@ class _TermsCheckbox extends StatelessWidget {
 }
 
 class _PrimaryRegisterButton extends StatelessWidget {
-  const _PrimaryRegisterButton({required this.onPressed});
+  const _PrimaryRegisterButton({
+    required this.isLoading,
+    required this.onPressed,
+  });
 
+  final bool isLoading;
   final VoidCallback onPressed;
 
   @override
@@ -549,7 +619,7 @@ class _PrimaryRegisterButton extends StatelessWidget {
     return SizedBox(
       height: 48,
       child: FilledButton.icon(
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         iconAlignment: IconAlignment.end,
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -560,8 +630,16 @@ class _PrimaryRegisterButton extends StatelessWidget {
           textStyle: AppTextStyles.titleMedium,
           elevation: 3,
         ),
-        icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-        label: const Text('Tạo tài khoản'),
+        icon: isLoading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.onPrimary,
+                ),
+              )
+            : const Icon(Icons.arrow_forward_rounded, size: 20),
+        label: Text(isLoading ? 'Đang tạo...' : 'Tạo tài khoản'),
       ),
     );
   }
@@ -601,20 +679,17 @@ class _AuthDivider extends StatelessWidget {
 }
 
 class _GoogleButton extends StatelessWidget {
-  const _GoogleButton();
+  const _GoogleButton({required this.isLoading, required this.onPressed});
+
+  final bool isLoading;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 48,
       child: OutlinedButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Google Sign-In sẽ được kết nối sau.'),
-            ),
-          );
-        },
+        onPressed: isLoading ? null : onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.onSurface,
           side: const BorderSide(color: AppColors.outlineVariant),
@@ -626,17 +701,23 @@ class _GoogleButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'G',
-              style: AppTextStyles.titleMedium.copyWith(
-                color: AppColors.error,
-                fontWeight: FontWeight.w700,
+            if (isLoading)
+              const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Text(
+                'G',
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
             const SizedBox(width: 8),
-            const Flexible(
+            Flexible(
               child: Text(
-                'Tiếp tục với Google',
+                isLoading ? 'Đang đăng nhập...' : 'Tiếp tục với Google',
                 overflow: TextOverflow.ellipsis,
               ),
             ),

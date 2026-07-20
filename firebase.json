@@ -1,0 +1,26 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "smart-expense-manager-1210chay",
+          "appId": "1:620730155211:android:7e5f9c32b826a2056b5b4e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "smart-expense-manager-1210chay",
+          "configurations": {
+            "android": "1:620730155211:android:7e5f9c32b826a2056b5b4e",
+            "windows": "1:620730155211:web:b9f8217019f836a46b5b4e"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

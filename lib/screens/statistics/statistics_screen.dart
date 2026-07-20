@@ -5,6 +5,13 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/app_formatters.dart';
+import '../../core/utils/category_catalog.dart';
+import '../../data/models/app_transaction.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
+
+enum _Period { week, month, year }
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -14,7 +21,9 @@ class StatisticsScreen extends StatefulWidget {
 }
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
+  final _repository = FirestoreRepository();
   var _selectedPeriod = _Period.month;
+  var _anchorDate = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +32,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        shadowColor: const Color(0xFF0F172A).withValues(alpha: 0.05),
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Quay lại',
@@ -57,37 +67,188 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                _TimeFilter(
-                  selectedPeriod: _selectedPeriod,
-                  onChanged: (period) {
-                    setState(() {
-                      _selectedPeriod = period;
-                    });
-                  },
-                ),
-                const SizedBox(height: 24),
-                const _SummaryGrid(),
-                const SizedBox(height: 24),
-                const _ChartsSection(),
-                const SizedBox(height: 24),
-                const _TopSpendingCard(),
-              ],
+            child: StreamBuilder<List<AppTransaction>>(
+              stream: _repository.watchTransactions(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      firebaseAuthErrorMessage(snapshot.error!),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+
+                final allTransactions = snapshot.data ?? [];
+                final transactions = allTransactions
+                    .where(_isInsideSelectedPeriod)
+                    .toList();
+                final stats = _Stats.fromTransactions(transactions);
+                final bars = _buildBars(transactions);
+                final categories = _buildCategoryStats(transactions);
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  children: [
+                    _TimeFilterSection(
+                      selectedPeriod: _selectedPeriod,
+                      periodLabel: _periodLabel,
+                      onPeriodChanged: (period) {
+                        setState(() => _selectedPeriod = period);
+                      },
+                      onPrevious: () => setState(() {
+                        _anchorDate = _shiftAnchor(-1);
+                      }),
+                      onNext: () => setState(() {
+                        _anchorDate = _shiftAnchor(1);
+                      }),
+                    ),
+                    const SizedBox(height: 24),
+                    _SummaryGrid(stats: stats),
+                    const SizedBox(height: 24),
+                    _ChartsSection(
+                      bars: bars,
+                      categories: categories,
+                      totalExpense: stats.expense,
+                    ),
+                    const SizedBox(height: 24),
+                    _TopSpendingCard(
+                      categories: categories,
+                      totalExpense: stats.expense,
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
       ),
     );
   }
+
+  String get _periodLabel {
+    return switch (_selectedPeriod) {
+      _Period.week => _weekLabel(_anchorDate),
+      _Period.month => 'Tháng ${_anchorDate.month}, ${_anchorDate.year}',
+      _Period.year => 'Năm ${_anchorDate.year}',
+    };
+  }
+
+  DateTime _shiftAnchor(int direction) {
+    return switch (_selectedPeriod) {
+      _Period.week => _anchorDate.add(Duration(days: direction * 7)),
+      _Period.month => DateTime(
+        _anchorDate.year,
+        _anchorDate.month + direction,
+        1,
+      ),
+      _Period.year => DateTime(_anchorDate.year + direction, 1, 1),
+    };
+  }
+
+  bool _isInsideSelectedPeriod(AppTransaction transaction) {
+    final date = transaction.transactionDate;
+    return switch (_selectedPeriod) {
+      _Period.week =>
+        _startOfDay(date).difference(_startOfWeek(_anchorDate)).inDays >= 0 &&
+            _startOfDay(date).difference(_startOfWeek(_anchorDate)).inDays < 7,
+      _Period.month =>
+        date.year == _anchorDate.year && date.month == _anchorDate.month,
+      _Period.year => date.year == _anchorDate.year,
+    };
+  }
+
+  List<_BarPoint> _buildBars(List<AppTransaction> transactions) {
+    return switch (_selectedPeriod) {
+      _Period.week => _buildWeekBars(transactions),
+      _Period.month => _buildMonthBars(transactions),
+      _Period.year => _buildYearBars(transactions),
+    };
+  }
+
+  List<_BarPoint> _buildWeekBars(List<AppTransaction> transactions) {
+    final start = _startOfWeek(_anchorDate);
+    const labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    return List.generate(7, (index) {
+      final date = start.add(Duration(days: index));
+      final dayTransactions = transactions.where((item) {
+        return _sameDay(item.transactionDate, date);
+      });
+      return _BarPoint(
+        labels[index],
+        _sumIncome(dayTransactions),
+        _sumExpense(dayTransactions),
+      );
+    });
+  }
+
+  List<_BarPoint> _buildMonthBars(List<AppTransaction> transactions) {
+    return List.generate(4, (index) {
+      final fromDay = index * 7 + 1;
+      final toDay = index == 3
+          ? DateTime(_anchorDate.year, _anchorDate.month + 1, 0).day
+          : (index + 1) * 7;
+      final bucket = transactions.where((item) {
+        final day = item.transactionDate.day;
+        return day >= fromDay && day <= toDay;
+      });
+      return _BarPoint(
+        'T${index + 1}',
+        _sumIncome(bucket),
+        _sumExpense(bucket),
+      );
+    });
+  }
+
+  List<_BarPoint> _buildYearBars(List<AppTransaction> transactions) {
+    return List.generate(12, (index) {
+      final month = index + 1;
+      final bucket = transactions.where(
+        (item) => item.transactionDate.month == month,
+      );
+      return _BarPoint('T$month', _sumIncome(bucket), _sumExpense(bucket));
+    });
+  }
+
+  List<_CategoryStat> _buildCategoryStats(List<AppTransaction> transactions) {
+    final totals = <String, int>{};
+    for (final transaction in transactions) {
+      if (transaction.type != AppTransactionType.expense) continue;
+      totals.update(
+        transaction.category,
+        (value) => value + transaction.amount,
+        ifAbsent: () => transaction.amount,
+      );
+    }
+
+    final entries = totals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.map((entry) {
+      return _CategoryStat(
+        meta: categoryMeta(entry.key, type: AppTransactionType.expense),
+        amount: entry.value,
+      );
+    }).toList();
+  }
 }
 
-class _TimeFilter extends StatelessWidget {
-  const _TimeFilter({required this.selectedPeriod, required this.onChanged});
+class _TimeFilterSection extends StatelessWidget {
+  const _TimeFilterSection({
+    required this.selectedPeriod,
+    required this.periodLabel,
+    required this.onPeriodChanged,
+    required this.onPrevious,
+    required this.onNext,
+  });
 
   final _Period selectedPeriod;
-  final ValueChanged<_Period> onChanged;
+  final String periodLabel;
+  final ValueChanged<_Period> onPeriodChanged;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -102,32 +263,32 @@ class _TimeFilter extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _PeriodButton(
+              _PeriodPill(
                 label: 'Tuần',
                 selected: selectedPeriod == _Period.week,
-                onTap: () => onChanged(_Period.week),
+                onTap: () => onPeriodChanged(_Period.week),
               ),
-              _PeriodButton(
+              _PeriodPill(
                 label: 'Tháng',
                 selected: selectedPeriod == _Period.month,
-                onTap: () => onChanged(_Period.month),
+                onTap: () => onPeriodChanged(_Period.month),
               ),
-              _PeriodButton(
+              _PeriodPill(
                 label: 'Năm',
                 selected: selectedPeriod == _Period.year,
-                onTap: () => onChanged(_Period.year),
+                onTap: () => onPeriodChanged(_Period.year),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
         Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(maxWidth: 320),
-          padding: const EdgeInsets.all(8),
+          width: 320,
+          constraints: const BoxConstraints(maxWidth: double.infinity),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF0F172A).withValues(alpha: 0.05),
@@ -140,22 +301,21 @@ class _TimeFilter extends StatelessWidget {
             children: [
               IconButton(
                 tooltip: 'Kỳ trước',
-                onPressed: () {},
+                onPressed: onPrevious,
                 icon: const Icon(Icons.chevron_left_rounded),
                 color: AppColors.onSurfaceVariant,
               ),
               Expanded(
                 child: Text(
-                  _periodTitle(selectedPeriod),
+                  periodLabel,
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.onSurface,
-                  ),
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleMedium,
                 ),
               ),
               IconButton(
                 tooltip: 'Kỳ sau',
-                onPressed: () {},
+                onPressed: onNext,
                 icon: const Icon(Icons.chevron_right_rounded),
                 color: AppColors.onSurfaceVariant,
               ),
@@ -165,18 +325,10 @@ class _TimeFilter extends StatelessWidget {
       ],
     );
   }
-
-  String _periodTitle(_Period period) {
-    return switch (period) {
-      _Period.week => 'Tuần 4, Th10 2023',
-      _Period.month => 'Tháng 10, 2023',
-      _Period.year => 'Năm 2023',
-    };
-  }
 }
 
-class _PeriodButton extends StatelessWidget {
-  const _PeriodButton({
+class _PeriodPill extends StatelessWidget {
+  const _PeriodPill({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -192,8 +344,8 @@ class _PeriodButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
         decoration: BoxDecoration(
           color: selected ? AppColors.primaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
@@ -213,6 +365,7 @@ class _PeriodButton extends StatelessWidget {
             color: selected
                 ? AppColors.onPrimaryContainer
                 : AppColors.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
@@ -221,43 +374,44 @@ class _PeriodButton extends StatelessWidget {
 }
 
 class _SummaryGrid extends StatelessWidget {
-  const _SummaryGrid();
+  const _SummaryGrid({required this.stats});
+
+  final _Stats stats;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 720 ? 4 : 2;
-
+        final isWide = constraints.maxWidth >= 720;
         return GridView.count(
-          crossAxisCount: crossAxisCount,
+          crossAxisCount: isWide ? 4 : 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 16,
           crossAxisSpacing: 16,
-          childAspectRatio: crossAxisCount == 4 ? 1.35 : 1.45,
-          children: const [
-            _SummaryCard(
+          childAspectRatio: isWide ? 1.7 : 1.55,
+          children: [
+            _MetricCard(
               label: 'Tổng thu nhập',
-              amount: '45.000.000đ',
+              amount: formatVnd(stats.income),
               icon: Icons.arrow_downward_rounded,
               color: AppColors.secondary,
             ),
-            _SummaryCard(
+            _MetricCard(
               label: 'Tổng chi tiêu',
-              amount: '32.500.000đ',
+              amount: formatVnd(stats.expense),
               icon: Icons.arrow_upward_rounded,
               color: AppColors.error,
             ),
-            _SummaryCard(
+            _MetricCard(
               label: 'Tiền tiết kiệm',
-              amount: '12.500.000đ',
-              icon: Icons.savings_rounded,
+              amount: formatVnd(stats.savings),
+              icon: Icons.savings_outlined,
               color: AppColors.primary,
             ),
-            _SummaryCard(
+            _MetricCard(
               label: 'Tỷ lệ tiết kiệm',
-              amount: '27.8%',
+              amount: '${stats.savingsRate.toStringAsFixed(1)}%',
               icon: Icons.percent_rounded,
               color: AppColors.tertiary,
             ),
@@ -268,8 +422,8 @@ class _SummaryGrid extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
     required this.label,
     required this.amount,
     required this.icon,
@@ -304,7 +458,7 @@ class _SummaryCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -320,31 +474,45 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _ChartsSection extends StatelessWidget {
-  const _ChartsSection();
+  const _ChartsSection({
+    required this.bars,
+    required this.categories,
+    required this.totalExpense,
+  });
+
+  final List<_BarPoint> bars;
+  final List<_CategoryStat> categories;
+  final int totalExpense;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 720;
-        final children = const [_IncomeExpenseChart(), _CategoryDonutCard()];
+        final chartCards = [
+          _IncomeExpenseChart(bars: bars),
+          _CategoryDonutCard(
+            categories: categories,
+            totalExpense: totalExpense,
+          ),
+        ];
 
-        if (isWide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        if (!isWide) {
+          return Column(
             children: [
-              Expanded(child: children[0]),
-              const SizedBox(width: 24),
-              Expanded(child: children[1]),
+              chartCards[0],
+              const SizedBox(height: 24),
+              chartCards[1],
             ],
           );
         }
 
-        return const Column(
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _IncomeExpenseChart(),
-            SizedBox(height: 24),
-            _CategoryDonutCard(),
+            Expanded(child: chartCards[0]),
+            const SizedBox(width: 24),
+            Expanded(child: chartCards[1]),
           ],
         );
       },
@@ -353,45 +521,49 @@ class _ChartsSection extends StatelessWidget {
 }
 
 class _IncomeExpenseChart extends StatelessWidget {
-  const _IncomeExpenseChart();
+  const _IncomeExpenseChart({required this.bars});
 
-  static const _bars = [
-    _BarMonth('T1', 0.80, 0.60),
-    _BarMonth('T2', 0.70, 0.85),
-    _BarMonth('T3', 0.90, 0.50),
-    _BarMonth('T4', 1.00, 0.70),
-  ];
+  final List<_BarPoint> bars;
 
   @override
   Widget build(BuildContext context) {
+    final maxValue = bars.fold<int>(1, (max, item) {
+      return math.max(max, math.max(item.income, item.expense));
+    });
+
     return _SoftCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Thu nhập vs Chi tiêu',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface,
-            ),
-          ),
+          Text('Thu nhập vs Chi tiêu', style: AppTextStyles.titleMedium),
           const SizedBox(height: 16),
           Container(
             height: 192,
-            padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+            padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
             decoration: BoxDecoration(
               color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                for (final bar in _bars) Expanded(child: _BarGroup(bar: bar)),
+                for (final point in bars)
+                  Expanded(
+                    child: _BarGroup(point: point, maxValue: maxValue),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          const _ChartLegend(),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              _LegendItem(color: AppColors.secondary, label: 'Thu nhập'),
+              SizedBox(width: 18),
+              _LegendItem(color: AppColors.error, label: 'Chi tiêu'),
+            ],
+          ),
         ],
       ),
     );
@@ -399,12 +571,16 @@ class _IncomeExpenseChart extends StatelessWidget {
 }
 
 class _BarGroup extends StatelessWidget {
-  const _BarGroup({required this.bar});
+  const _BarGroup({required this.point, required this.maxValue});
 
-  final _BarMonth bar;
+  final _BarPoint point;
+  final int maxValue;
 
   @override
   Widget build(BuildContext context) {
+    final incomeHeight = _barFactor(point.income, maxValue);
+    final expenseHeight = _barFactor(point.expense, maxValue);
+
     return Column(
       children: [
         Expanded(
@@ -413,10 +589,10 @@ class _BarGroup extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               FractionallySizedBox(
-                heightFactor: bar.income,
+                heightFactor: incomeHeight,
                 alignment: Alignment.bottomCenter,
                 child: Container(
-                  width: 18,
+                  width: 12,
                   decoration: const BoxDecoration(
                     color: AppColors.secondary,
                     borderRadius: BorderRadius.vertical(
@@ -427,10 +603,10 @@ class _BarGroup extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               FractionallySizedBox(
-                heightFactor: bar.expense,
+                heightFactor: expenseHeight,
                 alignment: Alignment.bottomCenter,
                 child: Container(
-                  width: 18,
+                  width: 12,
                   decoration: const BoxDecoration(
                     color: AppColors.error,
                     borderRadius: BorderRadius.vertical(
@@ -442,96 +618,92 @@ class _BarGroup extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          bar.label,
-          style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.onSurfaceVariant,
-            fontSize: 10,
-          ),
+          point.label,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.labelMedium.copyWith(fontSize: 10),
         ),
       ],
     );
   }
-}
 
-class _ChartLegend extends StatelessWidget {
-  const _ChartLegend();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        _LegendItem(label: 'Thu nhập', color: AppColors.secondary),
-        SizedBox(width: 16),
-        _LegendItem(label: 'Chi tiêu', color: AppColors.error),
-      ],
-    );
+  double _barFactor(int value, int maxValue) {
+    if (value <= 0) return 0.02;
+    return (value / maxValue).clamp(0.08, 1);
   }
 }
 
 class _CategoryDonutCard extends StatelessWidget {
-  const _CategoryDonutCard();
+  const _CategoryDonutCard({
+    required this.categories,
+    required this.totalExpense,
+  });
+
+  final List<_CategoryStat> categories;
+  final int totalExpense;
 
   @override
   Widget build(BuildContext context) {
+    final visibleCategories = categories.take(4).toList();
+
     return _SoftCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Danh mục chi tiêu',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface,
-            ),
-          ),
-          const SizedBox(height: 16),
+          Text('Danh mục chi tiêu', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 12),
           SizedBox(
             height: 192,
             child: Center(
               child: SizedBox(
-                width: 150,
-                height: 150,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const CustomPaint(
-                      size: Size.square(150),
-                      painter: _DonutChartPainter(),
-                    ),
-                    Container(
-                      width: 82,
-                      height: 82,
-                      decoration: const BoxDecoration(
-                        color: AppColors.surfaceContainerLowest,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '100%',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.onSurface,
+                width: 148,
+                height: 148,
+                child: CustomPaint(
+                  painter: _DonutChartPainter(
+                    categories: visibleCategories,
+                    total: totalExpense,
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          totalExpense == 0 ? '0%' : '100%',
+                          style: AppTextStyles.titleMedium,
                         ),
-                      ),
+                        Text('Chi tiêu', style: AppTextStyles.labelMedium),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          const Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _LegendItem(label: 'Ăn uống (50%)', color: AppColors.error),
-              _LegendItem(label: 'Mua sắm (25%)', color: AppColors.tertiary),
-              _LegendItem(label: 'Di chuyển (25%)', color: AppColors.primary),
-            ],
-          ),
+          if (visibleCategories.isEmpty)
+            Center(
+              child: Text(
+                'Chưa có chi tiêu',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                for (final item in visibleCategories)
+                  _LegendItem(
+                    color: item.meta.color,
+                    label:
+                        '${item.meta.label} (${_percentText(item.amount, totalExpense)})',
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -539,37 +711,18 @@ class _CategoryDonutCard extends StatelessWidget {
 }
 
 class _TopSpendingCard extends StatelessWidget {
-  const _TopSpendingCard();
+  const _TopSpendingCard({
+    required this.categories,
+    required this.totalExpense,
+  });
 
-  static const _items = [
-    _SpendingItem(
-      name: 'Ăn uống',
-      amount: '16.250.000đ',
-      percent: 0.50,
-      icon: Icons.restaurant_rounded,
-      color: AppColors.error,
-      tint: Color(0x66FFDAD6),
-    ),
-    _SpendingItem(
-      name: 'Mua sắm',
-      amount: '8.125.000đ',
-      percent: 0.25,
-      icon: Icons.shopping_bag_rounded,
-      color: AppColors.tertiary,
-      tint: AppColors.tertiaryContainer,
-    ),
-    _SpendingItem(
-      name: 'Di chuyển',
-      amount: '8.125.000đ',
-      percent: 0.25,
-      icon: Icons.directions_car_rounded,
-      color: AppColors.primary,
-      tint: AppColors.primaryContainer,
-    ),
-  ];
+  final List<_CategoryStat> categories;
+  final int totalExpense;
 
   @override
   Widget build(BuildContext context) {
+    final top = categories.take(5).toList();
+
     return _SoftCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -580,36 +733,42 @@ class _TopSpendingCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Chi tiêu nhiều nhất',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.onSurface,
-                  ),
+                  style: AppTextStyles.titleMedium,
                 ),
               ),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  textStyle: AppTextStyles.labelMedium,
-                ),
-                child: const Text('Xem tất cả'),
-              ),
+              TextButton(onPressed: () {}, child: const Text('Xem tất cả')),
             ],
           ),
           const SizedBox(height: 8),
-          for (final item in _items) ...[
-            _SpendingRow(item: item),
-            if (item != _items.last) const SizedBox(height: 16),
-          ],
+          if (top.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'Chưa có dữ liệu chi tiêu trong kỳ này.',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            for (final item in top) ...[
+              _TopCategoryRow(
+                item: item,
+                percent: totalExpense == 0 ? 0 : item.amount / totalExpense,
+              ),
+              const SizedBox(height: 16),
+            ],
         ],
       ),
     );
   }
 }
 
-class _SpendingRow extends StatelessWidget {
-  const _SpendingRow({required this.item});
+class _TopCategoryRow extends StatelessWidget {
+  const _TopCategoryRow({required this.item, required this.percent});
 
-  final _SpendingItem item;
+  final _CategoryStat item;
+  final double percent;
 
   @override
   Widget build(BuildContext context) {
@@ -617,29 +776,23 @@ class _SpendingRow extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: item.tint,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(item.icon, color: item.color, size: 22),
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: item.meta.backgroundColor,
+              child: Icon(item.meta.icon, color: item.meta.color, size: 22),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
-                item.name,
+                item.meta.label,
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
             Text(
-              item.amount,
+              formatVnd(item.amount),
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -649,10 +802,10 @@ class _SpendingRow extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
           child: LinearProgressIndicator(
-            value: item.percent,
+            value: percent.clamp(0, 1),
             minHeight: 8,
+            color: item.meta.color,
             backgroundColor: AppColors.surfaceContainerLow,
-            valueColor: AlwaysStoppedAnimation<Color>(item.color),
           ),
         ),
       ],
@@ -661,10 +814,10 @@ class _SpendingRow extends StatelessWidget {
 }
 
 class _LegendItem extends StatelessWidget {
-  const _LegendItem({required this.label, required this.color});
+  const _LegendItem({required this.color, required this.label});
 
-  final String label;
   final Color color;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -768,27 +921,30 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: selected ? null : onTap,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.symmetric(
+            horizontal: selected ? 14 : 8,
+            vertical: selected ? 5 : 6,
+          ),
           decoration: BoxDecoration(
             color: selected ? AppColors.secondaryContainer : Colors.transparent,
             borderRadius: selected
                 ? BorderRadius.circular(999)
                 : BorderRadius.circular(12),
           ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  color: selected
-                      ? AppColors.onSecondaryContainer
-                      : AppColors.onSurfaceVariant,
-                ),
-                const SizedBox(height: 2),
-                Text(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: selected
+                    ? AppColors.onSecondaryContainer
+                    : AppColors.onSurfaceVariant,
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                child: Text(
                   label,
                   style: AppTextStyles.labelMedium.copyWith(
                     color: selected
@@ -797,8 +953,8 @@ class _NavItem extends StatelessWidget {
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -818,10 +974,11 @@ class _SoftCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF0F172A).withValues(alpha: 0.05),
@@ -836,75 +993,119 @@ class _SoftCard extends StatelessWidget {
 }
 
 class _DonutChartPainter extends CustomPainter {
-  const _DonutChartPainter();
+  const _DonutChartPainter({required this.categories, required this.total});
+
+  final List<_CategoryStat> categories;
+  final int total;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    const strokeWidth = 18.0;
-    const startAngle = -math.pi / 2;
-
-    final segments = [
-      (color: AppColors.error, value: 0.50),
-      (color: AppColors.tertiary, value: 0.25),
-      (color: AppColors.primary, value: 0.25),
-    ];
-
-    final backgroundPaint = Paint()
-      ..color = AppColors.surfaceContainerLow
+    final strokeWidth = size.shortestSide * 0.16;
+    final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.butt;
 
+    paint.color = AppColors.surfaceContainerLow;
     canvas.drawArc(
       rect.deflate(strokeWidth / 2),
-      0,
+      -math.pi / 2,
       math.pi * 2,
       false,
-      backgroundPaint,
+      paint,
     );
 
-    var angle = startAngle;
-    for (final segment in segments) {
-      final paint = Paint()
-        ..color = segment.color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round;
-      final sweep = math.pi * 2 * segment.value;
-      canvas.drawArc(rect.deflate(strokeWidth / 2), angle, sweep, false, paint);
-      angle += sweep;
+    if (total <= 0 || categories.isEmpty) return;
+
+    var startAngle = -math.pi / 2;
+    for (final category in categories) {
+      final sweepAngle = (category.amount / total) * math.pi * 2;
+      paint.color = category.meta.color;
+      canvas.drawArc(
+        rect.deflate(strokeWidth / 2),
+        startAngle,
+        sweepAngle,
+        false,
+        paint,
+      );
+      startAngle += sweepAngle;
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _DonutChartPainter oldDelegate) {
+    return oldDelegate.categories != categories || oldDelegate.total != total;
+  }
 }
 
-enum _Period { week, month, year }
+class _Stats {
+  const _Stats({required this.income, required this.expense});
 
-class _BarMonth {
-  const _BarMonth(this.label, this.income, this.expense);
+  factory _Stats.fromTransactions(List<AppTransaction> transactions) {
+    return _Stats(
+      income: _sumIncome(transactions),
+      expense: _sumExpense(transactions),
+    );
+  }
+
+  final int income;
+  final int expense;
+
+  int get savings => income - expense;
+
+  double get savingsRate => income == 0 ? 0 : (savings / income) * 100;
+}
+
+class _BarPoint {
+  const _BarPoint(this.label, this.income, this.expense);
 
   final String label;
-  final double income;
-  final double expense;
+  final int income;
+  final int expense;
 }
 
-class _SpendingItem {
-  const _SpendingItem({
-    required this.name,
-    required this.amount,
-    required this.percent,
-    required this.icon,
-    required this.color,
-    required this.tint,
-  });
+class _CategoryStat {
+  const _CategoryStat({required this.meta, required this.amount});
 
-  final String name;
-  final String amount;
-  final double percent;
-  final IconData icon;
-  final Color color;
-  final Color tint;
+  final CategoryMeta meta;
+  final int amount;
+}
+
+int _sumIncome(Iterable<AppTransaction> transactions) {
+  return transactions
+      .where((item) => item.type == AppTransactionType.income)
+      .fold<int>(0, (sum, item) => sum + item.amount);
+}
+
+int _sumExpense(Iterable<AppTransaction> transactions) {
+  return transactions
+      .where((item) => item.type == AppTransactionType.expense)
+      .fold<int>(0, (sum, item) => sum + item.amount);
+}
+
+DateTime _startOfWeek(DateTime date) {
+  final start = DateTime(date.year, date.month, date.day);
+  return start.subtract(Duration(days: start.weekday - 1));
+}
+
+DateTime _startOfDay(DateTime date) {
+  return DateTime(date.year, date.month, date.day);
+}
+
+bool _sameDay(DateTime left, DateTime right) {
+  return left.year == right.year &&
+      left.month == right.month &&
+      left.day == right.day;
+}
+
+String _weekLabel(DateTime date) {
+  final start = _startOfWeek(date);
+  final end = start.add(const Duration(days: 6));
+  return '${start.day}/${start.month} - ${end.day}/${end.month}, ${end.year}';
+}
+
+String _percentText(int amount, int total) {
+  if (total <= 0) return '0%';
+  return '${((amount / total) * 100).round()}%';
 }

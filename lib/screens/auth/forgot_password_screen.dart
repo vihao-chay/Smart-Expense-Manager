@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -14,8 +16,10 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final _authRepository = AuthRepository();
 
   var _linkSent = false;
+  var _isSubmitting = false;
 
   @override
   void dispose() {
@@ -32,15 +36,35 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     Navigator.of(context).pushReplacementNamed(AppRoutes.login);
   }
 
-  void _sendResetLink() {
+  Future<void> _sendResetLink() async {
+    if (_isSubmitting) return;
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
 
     FocusScope.of(context).unfocus();
     setState(() {
-      _linkSent = true;
+      _isSubmitting = true;
     });
+
+    try {
+      await _authRepository.sendPasswordResetEmail(_emailController.text);
+      if (!mounted) return;
+      setState(() {
+        _linkSent = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -73,6 +97,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           linkSent: _linkSent,
                           formKey: _formKey,
                           emailController: _emailController,
+                          isSubmitting: _isSubmitting,
                           onBackPressed: _goBackToLogin,
                           onSubmit: _sendResetLink,
                         ),
@@ -119,6 +144,7 @@ class _ForgotPasswordCard extends StatelessWidget {
     required this.linkSent,
     required this.formKey,
     required this.emailController,
+    required this.isSubmitting,
     required this.onBackPressed,
     required this.onSubmit,
   });
@@ -127,6 +153,7 @@ class _ForgotPasswordCard extends StatelessWidget {
   final bool linkSent;
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
+  final bool isSubmitting;
   final VoidCallback onBackPressed;
   final VoidCallback onSubmit;
 
@@ -159,6 +186,7 @@ class _ForgotPasswordCard extends StatelessWidget {
           _DefaultState(
             formKey: formKey,
             emailController: emailController,
+            isSubmitting: isSubmitting,
             onSubmit: onSubmit,
           ),
       ],
@@ -191,11 +219,13 @@ class _DefaultState extends StatelessWidget {
   const _DefaultState({
     required this.formKey,
     required this.emailController,
+    required this.isSubmitting,
     required this.onSubmit,
   });
 
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
+  final bool isSubmitting;
   final VoidCallback onSubmit;
 
   @override
@@ -224,7 +254,7 @@ class _DefaultState extends StatelessWidget {
           SizedBox(
             height: 48,
             child: FilledButton(
-              onPressed: onSubmit,
+              onPressed: isSubmitting ? null : onSubmit,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primaryContainer,
                 foregroundColor: AppColors.onPrimaryContainer,
@@ -233,7 +263,15 @@ class _DefaultState extends StatelessWidget {
                 ),
                 textStyle: AppTextStyles.titleMedium,
               ),
-              child: const Text('Gửi liên kết khôi phục'),
+              child: isSubmitting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.onPrimaryContainer,
+                      ),
+                    )
+                  : const Text('Gửi liên kết khôi phục'),
             ),
           ),
         ],

@@ -3,83 +3,186 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/models/app_user_profile.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final repository = FirestoreRepository();
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          tooltip: 'Quay lại',
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pushReplacementNamed(AppRoutes.home);
-            }
-          },
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: AppColors.onSurfaceVariant,
-        ),
         title: Text(
           'Hồ sơ',
           style: AppTextStyles.headlineLargeMobile.copyWith(
             color: AppColors.primary,
           ),
         ),
-        actions: const [SizedBox(width: 48)],
       ),
       bottomNavigationBar: const _ProfileBottomNavBar(),
       body: SafeArea(
         top: false,
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: const [
-                _ProfileCard(),
-                SizedBox(height: 24),
-                _SettingsSection(
-                  title: 'Cài đặt tài khoản',
-                  items: [
-                    _SettingsItemData(
-                      icon: Icons.person_outline_rounded,
-                      title: 'Thông tin cá nhân',
-                    ),
-                    _SettingsItemData(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: StreamBuilder<AppUserProfile?>(
+              stream: repository.watchProfile(),
+              builder: (context, snapshot) {
+                final profile = snapshot.data;
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  children: [
+                    _ProfileHeader(profile: profile),
+                    const SizedBox(height: 16),
+                    _MenuTile(
                       icon: Icons.settings_outlined,
                       title: 'Cài đặt',
-                      routeName: AppRoutes.settings,
+                      subtitle: 'Thông báo, ngôn ngữ và tiền tệ',
+                      onTap: () {
+                        Navigator.of(context).pushNamed(AppRoutes.settings);
+                      },
                     ),
+                    _MenuTile(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Lịch sử giao dịch',
+                      subtitle: 'Xem, tìm kiếm và lọc giao dịch',
+                      onTap: () {
+                        Navigator.of(context).pushNamed(AppRoutes.transactions);
+                      },
+                    ),
+                    _MenuTile(
+                      icon: Icons.leaderboard_outlined,
+                      title: 'Thống kê',
+                      subtitle: 'Biểu đồ thu chi và danh mục',
+                      onTap: () {
+                        Navigator.of(context).pushNamed(AppRoutes.statistics);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const _LogoutButton(),
                   ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({required this.profile});
+
+  final AppUserProfile? profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = profile?.fullName.trim().isNotEmpty == true
+        ? profile!.fullName.trim()
+        : 'Người dùng';
+    final email = profile?.email.trim().isNotEmpty == true
+        ? profile!.email.trim()
+        : 'Chưa có email';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.20),
+        ),
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 42,
+            backgroundColor: AppColors.secondaryContainer,
+            backgroundImage: profile?.avatarUrl == null
+                ? null
+                : NetworkImage(profile!.avatarUrl!),
+            child: profile?.avatarUrl == null
+                ? const Icon(Icons.person_rounded, size: 42)
+                : null,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            name,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            email,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Ink(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.outlineVariant.withValues(alpha: 0.20),
+              ),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppColors.surfaceContainer,
+                  child: Icon(icon, color: AppColors.primary),
                 ),
-                SizedBox(height: 16),
-                _SettingsSection(
-                  title: 'Khác',
-                  items: [
-                    _SettingsItemData(
-                      icon: Icons.notifications_none_rounded,
-                      title: 'Thông báo',
-                      routeName: AppRoutes.notifications,
-                    ),
-                    _SettingsItemData(
-                      icon: Icons.security_rounded,
-                      title: 'Bảo mật',
-                    ),
-                    _SettingsItemData(
-                      icon: Icons.logout_rounded,
-                      title: 'Đăng xuất',
-                      destructive: true,
-                    ),
-                  ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: AppTextStyles.titleMedium),
+                      Text(subtitle, style: AppTextStyles.labelMedium),
+                    ],
+                  ),
                 ),
+                const Icon(Icons.chevron_right_rounded),
               ],
             ),
           ),
@@ -89,245 +192,49 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-class _ProfileCard extends StatelessWidget {
-  const _ProfileCard();
+class _LogoutButton extends StatefulWidget {
+  const _LogoutButton();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 96,
-                height: 96,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.surfaceContainerLow,
-                    width: 4,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Image.network(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuA2fHJpRdBCLlyefGIzzLazCq7mMvdgHIglk7huInHnQSXxBQfgoneT4OuUUwYznCfi4oGeIPjHy9zCBw_hZgPjksH25ZPfAS6AfxgHLbmdeNg-ZfEEXj7gjs6RLyi0kyNLgTwVkDNYY5uPYeO40cUMGtA-bvLpJKm_2FiodI6I4Ylzaroq7Zi94wuLc_4q-eJwh0-TFxUg-GiHJFuz-m6THkSZ9hJPp5FRPEKF8GC8pSuznGI-VA',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.person_rounded,
-                      color: AppColors.onSurfaceVariant,
-                      size: 48,
-                    );
-                  },
-                ),
-              ),
-              Positioned(
-                right: -2,
-                bottom: -2,
-                child: IconButton.filled(
-                  tooltip: 'Đổi ảnh đại diện',
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Chức năng đổi ảnh sẽ được thêm sau.'),
-                      ),
-                    );
-                  },
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.primaryContainer,
-                    foregroundColor: AppColors.onPrimary,
-                    minimumSize: const Size(32, 32),
-                    fixedSize: const Size(32, 32),
-                  ),
-                  icon: const Icon(Icons.edit_rounded, size: 16),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Nguyễn Minh Khang',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'khang.nguyen@example.com',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Màn chỉnh sửa hồ sơ sẽ được thêm sau.'),
-                ),
-              );
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primaryContainer,
-              foregroundColor: AppColors.onPrimary,
-              minimumSize: const Size(0, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              textStyle: AppTextStyles.labelMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            child: const Text('Chỉnh sửa hồ sơ'),
-          ),
-        ],
-      ),
-    );
-  }
+  State<_LogoutButton> createState() => _LogoutButtonState();
 }
 
-class _SettingsSection extends StatelessWidget {
-  const _SettingsSection({required this.title, required this.items});
+class _LogoutButtonState extends State<_LogoutButton> {
+  final _authRepository = AuthRepository();
+  var _isLoading = false;
 
-  final String title;
-  final List<_SettingsItemData> items;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: const BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              border: Border(
-                bottom: BorderSide(color: AppColors.surfaceVariant),
-              ),
-            ),
-            child: Text(
-              title.toUpperCase(),
-              style: AppTextStyles.labelMedium.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          for (var index = 0; index < items.length; index++) ...[
-            _SettingsTile(item: items[index]),
-            if (index != items.length - 1)
-              const Divider(height: 1, color: AppColors.surfaceVariant),
-          ],
-        ],
-      ),
-    );
+  Future<void> _logout() async {
+    setState(() => _isLoading = true);
+    try {
+      await _authRepository.signOut();
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
-
-class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({required this.item});
-
-  final _SettingsItemData item;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        if (item.destructive) {
-          Navigator.of(
-            context,
-          ).pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
-          return;
-        }
-
-        if (item.routeName != null) {
-          Navigator.of(context).pushNamed(item.routeName!);
-          return;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${item.title} sẽ được thêm sau.')),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: item.destructive
-                    ? AppColors.error.withValues(alpha: 0.12)
-                    : AppColors.secondaryContainer.withValues(alpha: 0.20),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                item.icon,
-                color: item.destructive ? AppColors.error : AppColors.primary,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                item.title,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: item.destructive
-                      ? AppColors.error
-                      : AppColors.onSurface,
-                  fontWeight: item.destructive
-                      ? FontWeight.w500
-                      : FontWeight.w400,
-                ),
-              ),
-            ),
-            if (!item.destructive)
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.onSurfaceVariant,
-              ),
-          ],
-        ),
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: _isLoading ? null : _logout,
+        icon: _isLoading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.logout_rounded),
+        label: const Text('Đăng xuất'),
+        style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
       ),
     );
   }
@@ -342,17 +249,7 @@ class _ProfileBottomNavBar extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-              blurRadius: 12,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
+        color: AppColors.surface,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
@@ -412,54 +309,31 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: selected ? null : onTap,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
+        child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.secondaryContainer : Colors.transparent,
-            borderRadius: selected
-                ? BorderRadius.circular(999)
-                : BorderRadius.circular(12),
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: selected
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: AppTextStyles.labelMedium.copyWith(
                   color: selected
-                      ? AppColors.onSecondaryContainer
+                      ? AppColors.primary
                       : AppColors.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: selected
-                        ? AppColors.onSecondaryContainer
-                        : AppColors.onSurfaceVariant,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
-
-class _SettingsItemData {
-  const _SettingsItemData({
-    required this.icon,
-    required this.title,
-    this.routeName,
-    this.destructive = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? routeName;
-  final bool destructive;
 }

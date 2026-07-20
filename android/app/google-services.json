@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "620730155211",
+    "project_id": "smart-expense-manager-1210chay",
+    "storage_bucket": "smart-expense-manager-1210chay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:620730155211:android:7e5f9c32b826a2056b5b4e",
+        "android_client_info": {
+          "package_name": "com.example.smart_expense_manager"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "620730155211-9k96jdkdhpki24jgflc8fuh3g2io2ddr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.smart_expense_manager",
+            "certificate_hash": "46f77295ad65d9f27638a5744069a64d03d62846"
+          }
+        },
+        {
+          "client_id": "620730155211-dpv7g0fe7hdjpjlfenfs5kqa2sa603g4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB_t56M3YQ9yforqFV-j0sEEHqM0qcBWk8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "620730155211-dpv7g0fe7hdjpjlfenfs5kqa2sa603g4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

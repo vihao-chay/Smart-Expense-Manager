@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/app_formatters.dart';
+import '../../data/services/exchange_rate_service.dart';
 
 class CurrencyConverterScreen extends StatefulWidget {
   const CurrencyConverterScreen({super.key});
@@ -13,22 +15,17 @@ class CurrencyConverterScreen extends StatefulWidget {
 }
 
 class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
-  final _amountController = TextEditingController(text: '1000000');
+  final _amountController = TextEditingController(text: '1');
+  final _service = ExchangeRateService();
 
-  _CurrencyOption _fromCurrency = _currencies.first;
-  _CurrencyOption _toCurrency = _currencies[1];
+  var _fromCurrency = 'USD';
+  var _toCurrency = 'VND';
+  late Future<ExchangeRateResult> _ratesFuture;
 
-  double get _amount => double.tryParse(_amountController.text) ?? 0;
-
-  double get _convertedAmount {
-    if (_amount <= 0) return 0;
-    final amountInVnd = _amount * _fromCurrency.vndRate;
-    return amountInVnd / _toCurrency.vndRate;
-  }
-
-  String get _rateText {
-    final rate = _fromCurrency.vndRate / _toCurrency.vndRate;
-    return '1 ${_fromCurrency.code} = ${_formatAmount(rate, _toCurrency)} ${_toCurrency.code}';
+  @override
+  void initState() {
+    super.initState();
+    _ratesFuture = _service.latest(_fromCurrency);
   }
 
   @override
@@ -37,11 +34,9 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
     super.dispose();
   }
 
-  void _swapCurrencies() {
+  void _refreshRates() {
     setState(() {
-      final oldFrom = _fromCurrency;
-      _fromCurrency = _toCurrency;
-      _toCurrency = oldFrom;
+      _ratesFuture = _service.latest(_fromCurrency);
     });
   }
 
@@ -57,116 +52,78 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
           tooltip: 'Quay lại',
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_rounded),
-          color: AppColors.onSurfaceVariant,
         ),
         title: Text(
-          'Smart Expense',
+          'Chuyển đổi tiền',
           style: AppTextStyles.headlineLargeMobile.copyWith(
             color: AppColors.primary,
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Tùy chọn',
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded),
-            color: AppColors.onSurfaceVariant,
-          ),
-        ],
       ),
       body: SafeArea(
         top: false,
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              children: [
-                Text(
-                  'Chuyển đổi tiền',
-                  style: AppTextStyles.headlineLarge.copyWith(
-                    color: AppColors.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Quy đổi nhanh giữa các loại tiền tệ phổ biến',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _ConverterCard(
-                  amountController: _amountController,
-                  fromCurrency: _fromCurrency,
-                  toCurrency: _toCurrency,
-                  convertedAmount: _convertedAmount,
-                  rateText: _rateText,
-                  onAmountChanged: () => setState(() {}),
-                  onFromChanged: (currency) {
-                    if (currency == null) return;
-                    setState(() {
-                      _fromCurrency = currency;
-                    });
-                  },
-                  onToChanged: (currency) {
-                    if (currency == null) return;
-                    setState(() {
-                      _toCurrency = currency;
-                    });
-                  },
-                  onSwap: _swapCurrencies,
-                ),
-                const SizedBox(height: 24),
-                const _RateInfoCard(),
-                const SizedBox(height: 16),
-                _PopularRatesCard(baseCurrency: _fromCurrency),
-              ],
-            ),
-          ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.92),
-            border: Border(
-              top: BorderSide(
-                color: AppColors.outlineVariant.withValues(alpha: 0.30),
-              ),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          child: SizedBox(
-            height: 54,
-            child: FilledButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Tỷ giá hiện đang dùng dữ liệu mẫu. Exchange Rate API sẽ được kết nối sau.',
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: FutureBuilder<ExchangeRateResult>(
+              future: _ratesFuture,
+              builder: (context, snapshot) {
+                final result = snapshot.data;
+                final rate = result?.rateFor(_toCurrency);
+                final amount = double.tryParse(_amountController.text) ?? 0;
+                final converted = rate == null ? null : amount * rate;
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  children: [
+                    _ConverterCard(
+                      amountController: _amountController,
+                      fromCurrency: _fromCurrency,
+                      toCurrency: _toCurrency,
+                      convertedAmount: converted,
+                      isLoading:
+                          snapshot.connectionState == ConnectionState.waiting,
+                      onAmountChanged: () => setState(() {}),
+                      onFromChanged: (value) {
+                        if (value == null || value == _fromCurrency) return;
+                        setState(() {
+                          _fromCurrency = value;
+                          _ratesFuture = _service.latest(_fromCurrency);
+                        });
+                      },
+                      onToChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _toCurrency = value);
+                      },
+                      onSwap: () {
+                        setState(() {
+                          final oldFrom = _fromCurrency;
+                          _fromCurrency = _toCurrency;
+                          _toCurrency = oldFrom;
+                          _ratesFuture = _service.latest(_fromCurrency);
+                        });
+                      },
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    if (snapshot.hasError)
+                      _ErrorCard(
+                        message:
+                            'Không thể lấy tỷ giá. Kiểm tra mạng rồi thử lại.',
+                        onRetry: _refreshRates,
+                      )
+                    else if (result != null) ...[
+                      _RateInfoCard(
+                        fromCurrency: _fromCurrency,
+                        toCurrency: _toCurrency,
+                        rate: rate,
+                        updatedAt: result.updatedAt,
+                      ),
+                      const SizedBox(height: 16),
+                      _PopularRatesCard(result: result, base: _fromCurrency),
+                    ],
+                  ],
                 );
               },
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                textStyle: AppTextStyles.titleMedium,
-              ),
-              icon: const Icon(Icons.sync_rounded),
-              label: const Text('Cập nhật tỷ giá'),
             ),
           ),
         ),
@@ -181,7 +138,7 @@ class _ConverterCard extends StatelessWidget {
     required this.fromCurrency,
     required this.toCurrency,
     required this.convertedAmount,
-    required this.rateText,
+    required this.isLoading,
     required this.onAmountChanged,
     required this.onFromChanged,
     required this.onToChanged,
@@ -189,76 +146,38 @@ class _ConverterCard extends StatelessWidget {
   });
 
   final TextEditingController amountController;
-  final _CurrencyOption fromCurrency;
-  final _CurrencyOption toCurrency;
-  final double convertedAmount;
-  final String rateText;
+  final String fromCurrency;
+  final String toCurrency;
+  final double? convertedAmount;
+  final bool isLoading;
   final VoidCallback onAmountChanged;
-  final ValueChanged<_CurrencyOption?> onFromChanged;
-  final ValueChanged<_CurrencyOption?> onToChanged;
+  final ValueChanged<String?> onFromChanged;
+  final ValueChanged<String?> onToChanged;
   final VoidCallback onSwap;
 
   @override
   Widget build(BuildContext context) {
     return _SoftCard(
-      padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CurrencyInputRow(
             label: 'Bạn có',
             controller: amountController,
-            selectedCurrency: fromCurrency,
+            currency: fromCurrency,
             onCurrencyChanged: onFromChanged,
-            onAmountChanged: onAmountChanged,
+            onChanged: onAmountChanged,
           ),
-          const SizedBox(height: 12),
-          Center(
-            child: IconButton.filled(
-              tooltip: 'Đổi chiều quy đổi',
-              onPressed: onSwap,
-              style: IconButton.styleFrom(
-                backgroundColor: AppColors.primaryContainer,
-                foregroundColor: AppColors.onPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              icon: const Icon(Icons.swap_vert_rounded),
-            ),
+          IconButton(
+            tooltip: 'Đổi chiều',
+            onPressed: onSwap,
+            icon: const Icon(Icons.swap_vert_rounded),
           ),
-          const SizedBox(height: 12),
           _CurrencyResultRow(
             label: 'Bạn nhận',
             amount: convertedAmount,
-            selectedCurrency: toCurrency,
+            currency: toCurrency,
+            isLoading: isLoading,
             onCurrencyChanged: onToChanged,
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 18,
-                  color: AppColors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    rateText,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -270,38 +189,32 @@ class _CurrencyInputRow extends StatelessWidget {
   const _CurrencyInputRow({
     required this.label,
     required this.controller,
-    required this.selectedCurrency,
+    required this.currency,
     required this.onCurrencyChanged,
-    required this.onAmountChanged,
+    required this.onChanged,
   });
 
   final String label;
   final TextEditingController controller;
-  final _CurrencyOption selectedCurrency;
-  final ValueChanged<_CurrencyOption?> onCurrencyChanged;
-  final VoidCallback onAmountChanged;
+  final String currency;
+  final ValueChanged<String?> onCurrencyChanged;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
     return _CurrencyShell(
       label: label,
-      currency: selectedCurrency,
+      currency: currency,
       onCurrencyChanged: onCurrencyChanged,
       child: TextField(
         controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-        onChanged: (_) => onAmountChanged(),
-        style: AppTextStyles.headlineLarge.copyWith(color: AppColors.primary),
-        decoration: InputDecoration(
-          hintText: '0',
-          hintStyle: AppTextStyles.headlineLarge.copyWith(
-            color: AppColors.outlineVariant,
-          ),
+        onChanged: (_) => onChanged(),
+        style: AppTextStyles.headlineLarge,
+        decoration: const InputDecoration(
           border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
+          hintText: '0',
         ),
       ),
     );
@@ -312,26 +225,31 @@ class _CurrencyResultRow extends StatelessWidget {
   const _CurrencyResultRow({
     required this.label,
     required this.amount,
-    required this.selectedCurrency,
+    required this.currency,
+    required this.isLoading,
     required this.onCurrencyChanged,
   });
 
   final String label;
-  final double amount;
-  final _CurrencyOption selectedCurrency;
-  final ValueChanged<_CurrencyOption?> onCurrencyChanged;
+  final double? amount;
+  final String currency;
+  final bool isLoading;
+  final ValueChanged<String?> onCurrencyChanged;
 
   @override
   Widget build(BuildContext context) {
     return _CurrencyShell(
       label: label,
-      currency: selectedCurrency,
+      currency: currency,
       onCurrencyChanged: onCurrencyChanged,
-      child: Text(
-        _formatAmount(amount, selectedCurrency),
-        overflow: TextOverflow.ellipsis,
-        style: AppTextStyles.headlineLarge.copyWith(color: AppColors.onSurface),
-      ),
+      child: isLoading
+          ? const LinearProgressIndicator()
+          : Text(
+              amount == null ? '--' : _formatCurrencyAmount(amount!, currency),
+              style: AppTextStyles.headlineLarge.copyWith(
+                color: AppColors.primary,
+              ),
+            ),
     );
   }
 }
@@ -339,43 +257,42 @@ class _CurrencyResultRow extends StatelessWidget {
 class _CurrencyShell extends StatelessWidget {
   const _CurrencyShell({
     required this.label,
-    required this.child,
     required this.currency,
     required this.onCurrencyChanged,
+    required this.child,
   });
 
   final String label;
+  final String currency;
+  final ValueChanged<String?> onCurrencyChanged;
   final Widget child;
-  final _CurrencyOption currency;
-  final ValueChanged<_CurrencyOption?> onCurrencyChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.45),
-        ),
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            label,
-            style: AppTextStyles.labelMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppTextStyles.labelMedium),
+                child,
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: child),
-              const SizedBox(width: 12),
-              _CurrencyDropdown(value: currency, onChanged: onCurrencyChanged),
-            ],
+          const SizedBox(width: 12),
+          DropdownButton<String>(
+            value: currency,
+            items: _currencies.map((item) {
+              return DropdownMenuItem(value: item, child: Text(item));
+            }).toList(),
+            onChanged: onCurrencyChanged,
           ),
         ],
       ),
@@ -383,83 +300,37 @@ class _CurrencyShell extends StatelessWidget {
   }
 }
 
-class _CurrencyDropdown extends StatelessWidget {
-  const _CurrencyDropdown({required this.value, required this.onChanged});
-
-  final _CurrencyOption value;
-  final ValueChanged<_CurrencyOption?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<_CurrencyOption>(
-          value: value,
-          borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
-          items: _currencies.map((currency) {
-            return DropdownMenuItem(
-              value: currency,
-              child: Text(currency.code),
-            );
-          }).toList(),
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
-}
-
 class _RateInfoCard extends StatelessWidget {
-  const _RateInfoCard();
+  const _RateInfoCard({
+    required this.fromCurrency,
+    required this.toCurrency,
+    required this.rate,
+    required this.updatedAt,
+  });
+
+  final String fromCurrency;
+  final String toCurrency;
+  final double? rate;
+  final DateTime updatedAt;
 
   @override
   Widget build(BuildContext context) {
     return _SoftCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: const BoxDecoration(
-              color: AppColors.secondaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.currency_exchange_rounded,
-              color: AppColors.onSecondaryContainer,
-            ),
+          Text('Tỷ giá hiện tại', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            rate == null
+                ? 'Không có tỷ giá cho $toCurrency'
+                : '1 $fromCurrency = ${_formatCurrencyAmount(rate!, toCurrency)}',
+            style: AppTextStyles.bodyLarge,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tỷ giá mẫu',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Màn này sẽ là nơi kết nối Exchange Rate API cho yêu cầu REST API của dự án.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 4),
+          Text(
+            'Cập nhật: ${formatDateTime(updatedAt)} • ExchangeRate-API',
+            style: AppTextStyles.labelMedium,
           ),
         ],
       ),
@@ -468,51 +339,28 @@ class _RateInfoCard extends StatelessWidget {
 }
 
 class _PopularRatesCard extends StatelessWidget {
-  const _PopularRatesCard({required this.baseCurrency});
+  const _PopularRatesCard({required this.result, required this.base});
 
-  final _CurrencyOption baseCurrency;
+  final ExchangeRateResult result;
+  final String base;
 
   @override
   Widget build(BuildContext context) {
-    final rates = _currencies.where((item) => item != baseCurrency).take(4);
-
+    final codes = _currencies.where((item) => item != base).take(5);
     return _SoftCard(
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Tỷ giá phổ biến',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface,
-            ),
-          ),
-          const SizedBox(height: 12),
-          for (final currency in rates)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${baseCurrency.code} → ${currency.code}',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurface,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _formatAmount(
-                      baseCurrency.vndRate / currency.vndRate,
-                      currency,
-                    ),
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+          Text('Tỷ giá phổ biến', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 8),
+          for (final code in codes)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('$base → $code'),
+              trailing: Text(
+                result.rateFor(code) == null
+                    ? '--'
+                    : _formatCurrencyAmount(result.rateFor(code)!, code),
               ),
             ),
         ],
@@ -521,83 +369,56 @@ class _PopularRatesCard extends StatelessWidget {
   }
 }
 
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SoftCard(
+      child: Column(
+        children: [
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Thử lại'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SoftCard extends StatelessWidget {
-  const _SoftCard({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-  });
+  const _SoftCard({required this.child});
 
   final Widget child;
-  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: padding,
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: AppColors.outlineVariant.withValues(alpha: 0.20),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: child,
     );
   }
 }
 
-class _CurrencyOption {
-  const _CurrencyOption({
-    required this.code,
-    required this.name,
-    required this.vndRate,
-    required this.decimals,
-  });
-
-  final String code;
-  final String name;
-  final double vndRate;
-  final int decimals;
+String _formatCurrencyAmount(double amount, String currency) {
+  if (currency == 'VND') return formatVnd(amount);
+  final decimals = currency == 'JPY' || currency == 'KRW' ? 0 : 2;
+  return '${amount.toStringAsFixed(decimals)} $currency';
 }
 
-const _currencies = [
-  _CurrencyOption(code: 'VND', name: 'Vietnam Dong', vndRate: 1, decimals: 0),
-  _CurrencyOption(code: 'USD', name: 'US Dollar', vndRate: 26000, decimals: 2),
-  _CurrencyOption(code: 'EUR', name: 'Euro', vndRate: 30000, decimals: 2),
-  _CurrencyOption(code: 'JPY', name: 'Japanese Yen', vndRate: 180, decimals: 0),
-  _CurrencyOption(code: 'KRW', name: 'Korean Won', vndRate: 19, decimals: 0),
-  _CurrencyOption(
-    code: 'CNY',
-    name: 'Chinese Yuan',
-    vndRate: 3600,
-    decimals: 2,
-  ),
-];
-
-String _formatAmount(double amount, _CurrencyOption currency) {
-  if (amount.isNaN || amount.isInfinite) return '0';
-  final fixed = amount.toStringAsFixed(currency.decimals);
-  final parts = fixed.split('.');
-  final whole = parts.first;
-  final buffer = StringBuffer();
-
-  for (var i = 0; i < whole.length; i++) {
-    final reverseIndex = whole.length - i;
-    buffer.write(whole[i]);
-    if (reverseIndex > 1 && reverseIndex % 3 == 1) {
-      buffer.write('.');
-    }
-  }
-
-  if (currency.decimals == 0) {
-    return buffer.toString();
-  }
-  return '${buffer.toString()},${parts.last}';
-}
+const _currencies = ['VND', 'USD', 'EUR', 'JPY', 'KRW', 'GBP', 'AUD', 'SGD'];

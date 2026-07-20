@@ -3,66 +3,87 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/app_formatters.dart';
+import '../../core/utils/category_catalog.dart';
+import '../../data/models/app_notification.dart';
+import '../../data/models/app_transaction.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class TransactionDetailArgs {
-  const TransactionDetailArgs({
-    required this.title,
-    required this.amount,
-    required this.transactionType,
-    required this.category,
-    required this.date,
-    required this.time,
-    required this.paymentMethod,
-    required this.note,
-    required this.createdAt,
-    required this.updatedAt,
-    required this.icon,
-    required this.accentColor,
-    required this.iconBackgroundColor,
-    required this.isIncome,
-  });
+  const TransactionDetailArgs({required this.transactionId});
 
-  final String title;
-  final String amount;
-  final String transactionType;
-  final String category;
-  final String date;
-  final String time;
-  final String paymentMethod;
-  final String note;
-  final String createdAt;
-  final String updatedAt;
-  final IconData icon;
-  final Color accentColor;
-  final Color iconBackgroundColor;
-  final bool isIncome;
+  final String transactionId;
 }
 
-class TransactionDetailScreen extends StatelessWidget {
+class TransactionDetailScreen extends StatefulWidget {
   const TransactionDetailScreen({super.key});
 
-  static const _fallbackArgs = TransactionDetailArgs(
-    title: 'Ăn trưa tại The Workshop',
-    amount: '-85.000 ₫',
-    transactionType: 'Chi tiêu',
-    category: 'Ăn uống',
-    date: 'Hôm nay, 24 Th10 2023',
-    time: '12:30',
-    paymentMethod: 'Tiền mặt',
-    note: 'Ăn trưa với đồng nghiệp tại quán quen',
-    createdAt: '24/10/2023 12:35',
-    updatedAt: '24/10/2023 12:35',
-    icon: Icons.restaurant_rounded,
-    accentColor: AppColors.error,
-    iconBackgroundColor: Color(0x330F766E),
-    isIncome: false,
-  );
+  @override
+  State<TransactionDetailScreen> createState() =>
+      _TransactionDetailScreenState();
+}
+
+class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
+  final _repository = FirestoreRepository();
+  var _isDeleting = false;
+
+  Future<void> _deleteTransaction(AppTransaction transaction) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Xóa giao dịch?'),
+          content: const Text('Giao dịch sẽ bị xóa khỏi Firestore.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Xóa'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await _repository.deleteTransaction(transaction.id);
+      await _repository.addNotification(
+        AppNotification(
+          id: '',
+          title: 'Đã xóa giao dịch',
+          body: transaction.title ?? transaction.category,
+          type: 'transaction',
+          isRead: false,
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã xóa giao dịch.')));
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    final args = routeArgs is TransactionDetailArgs ? routeArgs : _fallbackArgs;
-    final amountColor = args.isIncome ? AppColors.primary : AppColors.error;
+    final transactionId = routeArgs is TransactionDetailArgs
+        ? routeArgs.transactionId
+        : null;
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -80,179 +101,202 @@ class TransactionDetailScreen extends StatelessWidget {
           'Chi tiết giao dịch',
           style: AppTextStyles.titleMedium.copyWith(color: AppColors.primary),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Tùy chọn',
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded),
-            color: AppColors.onSurfaceVariant,
-          ),
-        ],
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLowest,
-            border: const Border(
-              top: BorderSide(color: AppColors.surfaceVariant),
+      body: transactionId == null
+          ? const _MissingTransaction()
+          : StreamBuilder<AppTransaction?>(
+              stream: _repository.watchTransaction(transactionId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _ErrorState(
+                    message: firebaseAuthErrorMessage(snapshot.error!),
+                  );
+                }
+                final transaction = snapshot.data;
+                if (transaction == null) return const _MissingTransaction();
+                return _DetailBody(
+                  transaction: transaction,
+                  isDeleting: _isDeleting,
+                  onDelete: () => _deleteTransaction(transaction),
+                );
+              },
             ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 48,
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.of(
-                      context,
-                    ).pushNamed(AppRoutes.editTransaction, arguments: args);
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primaryContainer,
-                    foregroundColor: AppColors.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    textStyle: AppTextStyles.titleMedium,
-                  ),
-                  child: const Text('Chỉnh sửa giao dịch'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 48,
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã mock xóa giao dịch.')),
-                    );
-                    Navigator.of(context).pop();
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    textStyle: AppTextStyles.titleMedium,
-                  ),
-                  child: const Text('Xóa giao dịch'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              children: [
-                _DetailHero(args: args, amountColor: amountColor),
-                const SizedBox(height: 32),
-                _DetailInfoCard(
-                  rows: [
-                    _DetailRowData(
-                      icon: Icons.swap_horiz_rounded,
-                      label: 'Loại giao dịch',
-                      value: args.transactionType,
-                    ),
-                    _DetailRowData(
-                      icon: Icons.category_outlined,
-                      label: 'Danh mục',
-                      value: args.category,
-                    ),
-                    _DetailRowData(
-                      icon: Icons.calendar_today_outlined,
-                      label: 'Ngày',
-                      value: args.date,
-                    ),
-                    _DetailRowData(
-                      icon: Icons.schedule_rounded,
-                      label: 'Giờ',
-                      value: args.time,
-                    ),
-                    _DetailRowData(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: 'Phương thức thanh toán',
-                      value: args.paymentMethod,
-                    ),
-                    _DetailRowData(
-                      icon: Icons.notes_rounded,
-                      label: 'Ghi chú',
-                      value: args.note,
-                      alignTop: true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _Metadata(createdAt: args.createdAt, updatedAt: args.updatedAt),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
 
-class _DetailHero extends StatelessWidget {
-  const _DetailHero({required this.args, required this.amountColor});
+class _DetailBody extends StatelessWidget {
+  const _DetailBody({
+    required this.transaction,
+    required this.isDeleting,
+    required this.onDelete,
+  });
 
-  final TransactionDetailArgs args;
-  final Color amountColor;
+  final AppTransaction transaction;
+  final bool isDeleting;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final meta = categoryMeta(transaction.category, type: transaction.type);
+    final isIncome = transaction.type == AppTransactionType.income;
+    final amountColor = isIncome ? AppColors.secondary : AppColors.error;
+
     return Column(
       children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: args.iconBackgroundColor,
-            shape: BoxShape.circle,
+        Expanded(
+          child: SafeArea(
+            top: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  children: [
+                    Column(
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: meta.backgroundColor,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(meta.icon, color: meta.color, size: 40),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          transaction.title ?? transaction.category,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.headlineLargeMobile,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          formatTransactionAmount(transaction),
+                          style: AppTextStyles.displayCurrency.copyWith(
+                            color: amountColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    _InfoCard(
+                      rows: [
+                        _InfoRowData(
+                          icon: Icons.swap_horiz_rounded,
+                          label: 'Loại giao dịch',
+                          value: isIncome ? 'Thu nhập' : 'Chi tiêu',
+                        ),
+                        _InfoRowData(
+                          icon: Icons.category_outlined,
+                          label: 'Danh mục',
+                          value: transaction.category,
+                        ),
+                        _InfoRowData(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Ngày',
+                          value: formatShortDate(transaction.transactionDate),
+                        ),
+                        _InfoRowData(
+                          icon: Icons.schedule_rounded,
+                          label: 'Giờ',
+                          value: formatTime(transaction.transactionDate),
+                        ),
+                        _InfoRowData(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: 'Phương thức',
+                          value: transaction.paymentMethod ?? 'Ví cá nhân',
+                        ),
+                        _InfoRowData(
+                          icon: Icons.notes_rounded,
+                          label: 'Ghi chú',
+                          value: transaction.note?.trim().isNotEmpty == true
+                              ? transaction.note!.trim()
+                              : 'Không có ghi chú',
+                          alignTop: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Ngày tạo: ${formatDateTime(transaction.createdAt)}',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.outline,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cập nhật lần cuối: ${formatDateTime(transaction.updatedAt)}',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          child: Icon(args.icon, color: args.accentColor, size: 40),
         ),
-        const SizedBox(height: 16),
-        Text(
-          args.title,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.onSurface,
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: 48,
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: isDeleting
+                        ? null
+                        : () {
+                            Navigator.of(context).pushNamed(
+                              AppRoutes.editTransaction,
+                              arguments: TransactionDetailArgs(
+                                transactionId: transaction.id,
+                              ),
+                            );
+                          },
+                    child: const Text('Chỉnh sửa giao dịch'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 48,
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: isDeleting ? null : onDelete,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      side: const BorderSide(color: AppColors.error),
+                    ),
+                    child: isDeleting
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Xóa giao dịch'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          args.amount,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.displayCurrency.copyWith(color: amountColor),
         ),
       ],
     );
   }
 }
 
-class _DetailInfoCard extends StatelessWidget {
-  const _DetailInfoCard({required this.rows});
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({required this.rows});
 
-  final List<_DetailRowData> rows;
+  final List<_InfoRowData> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -260,25 +304,19 @@ class _DetailInfoCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         children: [
           for (var index = 0; index < rows.length; index++) ...[
-            _DetailRow(data: rows[index]),
+            _InfoRow(data: rows[index]),
             if (index != rows.length - 1)
-              Padding(
-                padding: const EdgeInsets.only(left: 64, right: 16),
-                child: Divider(
-                  height: 1,
-                  color: AppColors.outlineVariant.withValues(alpha: 0.30),
-                ),
+              Divider(
+                height: 1,
+                indent: 72,
+                color: AppColors.outlineVariant.withValues(alpha: 0.25),
               ),
           ],
         ],
@@ -287,29 +325,23 @@ class _DetailInfoCard extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.data});
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.data});
 
-  final _DetailRowData data;
+  final _InfoRowData data;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: data.alignTop
             ? CrossAxisAlignment.start
             : CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            margin: EdgeInsets.only(top: data.alignTop ? 4 : 0),
-            decoration: const BoxDecoration(
-              color: AppColors.surfaceContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(data.icon, color: AppColors.onSurfaceVariant, size: 22),
+          CircleAvatar(
+            backgroundColor: AppColors.surfaceContainer,
+            child: Icon(data.icon, color: AppColors.onSurfaceVariant),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -318,15 +350,12 @@ class _DetailRow extends StatelessWidget {
               children: [
                 Text(
                   data.label.toUpperCase(),
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.onSurfaceVariant,
-                  ),
+                  style: AppTextStyles.labelMedium,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   data.value,
                   style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.onSurface,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -339,34 +368,8 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-class _Metadata extends StatelessWidget {
-  const _Metadata({required this.createdAt, required this.updatedAt});
-
-  final String createdAt;
-  final String updatedAt;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          'Ngày tạo: $createdAt',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.labelMedium.copyWith(color: AppColors.outline),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Cập nhật lần cuối: $updatedAt',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.labelMedium.copyWith(color: AppColors.outline),
-        ),
-      ],
-    );
-  }
-}
-
-class _DetailRowData {
-  const _DetailRowData({
+class _InfoRowData {
+  const _InfoRowData({
     required this.icon,
     required this.label,
     required this.value,
@@ -377,4 +380,24 @@ class _DetailRowData {
   final String label;
   final String value;
   final bool alignTop;
+}
+
+class _MissingTransaction extends StatelessWidget {
+  const _MissingTransaction();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(child: Text('Không tìm thấy giao dịch.'));
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: Text(message, textAlign: TextAlign.center));
+  }
 }

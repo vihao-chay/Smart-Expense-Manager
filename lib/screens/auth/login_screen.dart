@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,9 +18,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authRepository = AuthRepository();
+  final _firestoreRepository = FirestoreRepository();
 
   bool _obscurePassword = true;
   bool _rememberMe = false;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -26,9 +32,71 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
-    Navigator.of(context).pushReplacementNamed(AppRoutes.onboarding);
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await _authRepository.signIn(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+      try {
+        await _firestoreRepository.markOnboardingCompleted();
+      } catch (_) {
+        // Existing accounts can still enter Home even if profile sync fails.
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_isSubmitting) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await _authRepository.signInWithGoogle();
+      final profile = await _firestoreRepository.fetchProfile();
+      if (!mounted) return;
+      final route = profile != null && profile.hasCompletedOnboarding
+          ? AppRoutes.home
+          : AppRoutes.onboarding;
+      Navigator.of(context).pushReplacementNamed(route);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -71,6 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   passwordController: _passwordController,
                                   obscurePassword: _obscurePassword,
                                   rememberMe: _rememberMe,
+                                  isSubmitting: _isSubmitting,
                                   onTogglePassword: () {
                                     setState(() {
                                       _obscurePassword = !_obscurePassword;
@@ -82,6 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     });
                                   },
                                   onSubmit: _submit,
+                                  onGoogleSignIn: _signInWithGoogle,
                                 ),
                               ],
                             ),
@@ -107,9 +177,11 @@ class _LoginCard extends StatelessWidget {
     required this.passwordController,
     required this.obscurePassword,
     required this.rememberMe,
+    required this.isSubmitting,
     required this.onTogglePassword,
     required this.onRememberChanged,
     required this.onSubmit,
+    required this.onGoogleSignIn,
   });
 
   final GlobalKey<FormState> formKey;
@@ -117,9 +189,11 @@ class _LoginCard extends StatelessWidget {
   final TextEditingController passwordController;
   final bool obscurePassword;
   final bool rememberMe;
+  final bool isSubmitting;
   final VoidCallback onTogglePassword;
   final ValueChanged<bool?> onRememberChanged;
   final VoidCallback onSubmit;
+  final VoidCallback onGoogleSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -204,9 +278,12 @@ class _LoginCard extends StatelessWidget {
             onRememberChanged: onRememberChanged,
           ),
           const SizedBox(height: 24),
-          _PrimaryLoginButton(onPressed: onSubmit),
+          _PrimaryLoginButton(isLoading: isSubmitting, onPressed: onSubmit),
           const _AuthDivider(),
-          const _GoogleLoginButton(),
+          _GoogleLoginButton(
+            isLoading: isSubmitting,
+            onPressed: onGoogleSignIn,
+          ),
           const SizedBox(height: 24),
           const _RegisterFooter(),
         ],
@@ -320,8 +397,9 @@ class _LoginOptions extends StatelessWidget {
 }
 
 class _PrimaryLoginButton extends StatelessWidget {
-  const _PrimaryLoginButton({required this.onPressed});
+  const _PrimaryLoginButton({required this.isLoading, required this.onPressed});
 
+  final bool isLoading;
   final VoidCallback onPressed;
 
   @override
@@ -329,7 +407,7 @@ class _PrimaryLoginButton extends StatelessWidget {
     return SizedBox(
       height: 48,
       child: FilledButton(
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
@@ -341,27 +419,32 @@ class _PrimaryLoginButton extends StatelessWidget {
           ),
           elevation: 3,
         ),
-        child: const Text('Đăng nhập'),
+        child: isLoading
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.onPrimary,
+                ),
+              )
+            : const Text('Đăng nhập'),
       ),
     );
   }
 }
 
 class _GoogleLoginButton extends StatelessWidget {
-  const _GoogleLoginButton();
+  const _GoogleLoginButton({required this.isLoading, required this.onPressed});
+
+  final bool isLoading;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 48,
       child: OutlinedButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Google Sign-In sẽ được kết nối sau.'),
-            ),
-          );
-        },
+        onPressed: isLoading ? null : onPressed,
         style: OutlinedButton.styleFrom(
           backgroundColor: AppColors.surfaceContainerLowest,
           foregroundColor: AppColors.onSurface,
@@ -374,14 +457,19 @@ class _GoogleLoginButton extends StatelessWidget {
           ),
           elevation: 1,
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _GoogleLogo(size: 20),
-            SizedBox(width: 8),
+            isLoading
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const _GoogleLogo(size: 20),
+            const SizedBox(width: 8),
             Flexible(
               child: Text(
-                'Tiếp tục với Google',
+                isLoading ? 'Đang đăng nhập...' : 'Tiếp tục với Google',
                 overflow: TextOverflow.ellipsis,
               ),
             ),
