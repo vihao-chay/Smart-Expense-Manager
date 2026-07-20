@@ -218,7 +218,7 @@ class _MobileBrandHeader extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(
+          child: Icon(
             Icons.account_balance_wallet_rounded,
             color: AppColors.surfaceContainerLowest,
             size: 20,
@@ -500,23 +500,23 @@ class _AuthTextField extends StatelessWidget {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.outlineVariant),
+              borderSide: BorderSide(color: AppColors.outlineVariant),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.outlineVariant),
+              borderSide: BorderSide(color: AppColors.outlineVariant),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 2),
+              borderSide: BorderSide(color: AppColors.primary, width: 2),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.error),
+              borderSide: BorderSide(color: AppColors.error),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.error, width: 2),
+              borderSide: BorderSide(color: AppColors.error, width: 2),
             ),
           ),
         ),
@@ -550,7 +550,7 @@ class _TermsCheckbox extends StatelessWidget {
               child: Checkbox(
                 value: value,
                 activeColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.outlineVariant),
+                side: BorderSide(color: AppColors.outlineVariant),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -631,7 +631,7 @@ class _PrimaryRegisterButton extends StatelessWidget {
           elevation: 3,
         ),
         icon: isLoading
-            ? const SizedBox.square(
+            ? SizedBox.square(
                 dimension: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
@@ -692,7 +692,7 @@ class _GoogleButton extends StatelessWidget {
         onPressed: isLoading ? null : onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.onSurface,
-          side: const BorderSide(color: AppColors.outlineVariant),
+          side: BorderSide(color: AppColors.outlineVariant),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -784,7 +784,7 @@ class _DesktopBrandPane extends StatelessWidget {
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.account_balance_wallet_rounded,
                   color: AppColors.primary,
                   size: 24,
@@ -843,9 +843,9 @@ class _PatternBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
+    return ColoredBox(
       color: AppColors.surface,
-      child: CustomPaint(painter: _PatternPainter()),
+      child: const CustomPaint(painter: _PatternPainter()),
     );
   }
 }

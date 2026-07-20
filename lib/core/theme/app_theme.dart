@@ -5,9 +5,17 @@ import 'app_text_styles.dart';
 
 abstract final class AppTheme {
   static ThemeData light() {
+    return _build(Brightness.light);
+  }
+
+  static ThemeData dark() {
+    return _build(Brightness.dark);
+  }
+
+  static ThemeData _build(Brightness brightness) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: AppColors.primaryContainer,
-      brightness: Brightness.light,
+      brightness: brightness,
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
       secondary: AppColors.secondary,
@@ -22,7 +30,7 @@ abstract final class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.surfaceBright,
       fontFamily: 'Inter',
-      textTheme: const TextTheme(
+      textTheme: TextTheme(
         displayLarge: AppTextStyles.displayCurrency,
         headlineLarge: AppTextStyles.headlineLarge,
         headlineMedium: AppTextStyles.headlineLargeMobile,

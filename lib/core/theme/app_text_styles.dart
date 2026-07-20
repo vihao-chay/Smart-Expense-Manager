@@ -5,7 +5,7 @@ import 'app_colors.dart';
 abstract final class AppTextStyles {
   static const _fontFamily = 'Inter';
 
-  static const displayCurrency = TextStyle(
+  static TextStyle get displayCurrency => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 32,
     fontWeight: FontWeight.w700,
@@ -14,7 +14,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const headlineLarge = TextStyle(
+  static TextStyle get headlineLarge => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 24,
     fontWeight: FontWeight.w700,
@@ -23,7 +23,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const headlineLargeMobile = TextStyle(
+  static TextStyle get headlineLargeMobile => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 20,
     fontWeight: FontWeight.w700,
@@ -32,7 +32,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const titleMedium = TextStyle(
+  static TextStyle get titleMedium => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 18,
     fontWeight: FontWeight.w600,
@@ -41,7 +41,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const bodyLarge = TextStyle(
+  static TextStyle get bodyLarge => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 16,
     fontWeight: FontWeight.w400,
@@ -50,7 +50,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const bodyMedium = TextStyle(
+  static TextStyle get bodyMedium => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w400,
@@ -59,7 +59,7 @@ abstract final class AppTextStyles {
     color: AppColors.onSurface,
   );
 
-  static const labelMedium = TextStyle(
+  static TextStyle get labelMedium => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w500,

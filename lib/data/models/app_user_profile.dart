@@ -8,6 +8,8 @@ class AppUserProfile {
     this.avatarUrl,
     this.defaultCurrency = 'VND',
     this.hasCompletedOnboarding = false,
+    this.role = 'user',
+    this.status = 'active',
     this.createdAt,
     this.updatedAt,
   });
@@ -18,8 +20,12 @@ class AppUserProfile {
   final String? avatarUrl;
   final String defaultCurrency;
   final bool hasCompletedOnboarding;
+  final String role;
+  final String status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isLocked => status == 'locked';
 
   factory AppUserProfile.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -32,6 +38,8 @@ class AppUserProfile {
       avatarUrl: data['avatarUrl'] as String?,
       defaultCurrency: data['defaultCurrency'] as String? ?? 'VND',
       hasCompletedOnboarding: data['hasCompletedOnboarding'] as bool? ?? false,
+      role: data['role'] as String? ?? 'user',
+      status: data['status'] as String? ?? 'active',
       createdAt: _dateFromFirestore(data['createdAt']),
       updatedAt: _dateFromFirestore(data['updatedAt']),
     );
@@ -44,6 +52,8 @@ class AppUserProfile {
       'avatarUrl': avatarUrl,
       'defaultCurrency': defaultCurrency,
       'hasCompletedOnboarding': hasCompletedOnboarding,
+      'role': role,
+      'status': status,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
