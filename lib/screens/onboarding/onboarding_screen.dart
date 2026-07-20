@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -13,7 +14,9 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageController = PageController();
+  final _firestoreRepository = FirestoreRepository();
   var _currentPage = 0;
+  var _isFinishing = false;
 
   static const _slides = [
     _OnboardingSlideData(
@@ -65,7 +68,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _goToPage(_slides.length - 1);
   }
 
-  void _finishOnboarding() {
+  Future<void> _finishOnboarding() async {
+    if (_isFinishing) return;
+    setState(() {
+      _isFinishing = true;
+    });
+
+    try {
+      await _firestoreRepository.markOnboardingCompleted();
+    } catch (_) {
+      // Direct preview routes may not have a signed-in user yet.
+    }
+
+    if (!mounted) return;
     Navigator.of(context).pushReplacementNamed(AppRoutes.home);
   }
 
@@ -99,6 +114,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       currentPage: _currentPage,
                       pageCount: _slides.length,
                       isLastPage: _isLastPage,
+                      isFinishing: _isFinishing,
                       onNext: _next,
                     ),
                   ],
@@ -203,12 +219,14 @@ class _OnboardingControls extends StatelessWidget {
     required this.currentPage,
     required this.pageCount,
     required this.isLastPage,
+    required this.isFinishing,
     required this.onNext,
   });
 
   final int currentPage;
   final int pageCount;
   final bool isLastPage;
+  final bool isFinishing;
   final VoidCallback onNext;
 
   @override
@@ -230,7 +248,7 @@ class _OnboardingControls extends StatelessWidget {
           SizedBox(
             height: 48,
             child: FilledButton(
-              onPressed: onNext,
+              onPressed: isFinishing ? null : onNext,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primaryContainer,
                 foregroundColor: AppColors.onPrimary,
@@ -240,7 +258,15 @@ class _OnboardingControls extends StatelessWidget {
                 textStyle: AppTextStyles.titleMedium,
                 elevation: 2,
               ),
-              child: Text(isLastPage ? 'Bắt đầu' : 'Tiếp tục'),
+              child: isFinishing
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.onPrimary,
+                      ),
+                    )
+                  : Text(isLastPage ? 'Bắt đầu' : 'Tiếp tục'),
             ),
           ),
         ],

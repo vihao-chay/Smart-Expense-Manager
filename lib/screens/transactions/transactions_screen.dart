@@ -3,10 +3,17 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/app_formatters.dart';
+import '../../core/utils/category_catalog.dart';
+import '../../data/models/app_transaction.dart';
+import '../../data/repositories/firebase_auth_error_mapper.dart';
+import '../../data/repositories/firestore_repository.dart';
 import '../add_transaction/add_transaction_screen.dart';
 import '../transaction_detail/transaction_detail_screen.dart';
 
 enum _TransactionFilter { all, income, expense }
+
+enum _DateFilter { all, today, thisMonth }
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
@@ -16,33 +23,60 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
+  final _repository = FirestoreRepository();
   final _searchController = TextEditingController();
+
   var _filter = _TransactionFilter.all;
-
-  List<_TransactionData> get _filteredTransactions {
-    final query = _searchController.text.trim().toLowerCase();
-
-    return _transactions.where((transaction) {
-      final matchesFilter = switch (_filter) {
-        _TransactionFilter.all => true,
-        _TransactionFilter.income => transaction.isIncome,
-        _TransactionFilter.expense => !transaction.isIncome,
-      };
-
-      final matchesSearch =
-          query.isEmpty ||
-          transaction.title.toLowerCase().contains(query) ||
-          transaction.method.toLowerCase().contains(query) ||
-          transaction.category.toLowerCase().contains(query);
-
-      return matchesFilter && matchesSearch;
-    }).toList();
-  }
+  var _dateFilter = _DateFilter.all;
+  var _categoryFilter = 'Tất cả';
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  List<AppTransaction> _filterTransactions(List<AppTransaction> transactions) {
+    final query = _searchController.text.trim().toLowerCase();
+    final now = DateTime.now();
+
+    return transactions.where((transaction) {
+      final matchesType = switch (_filter) {
+        _TransactionFilter.all => true,
+        _TransactionFilter.income =>
+          transaction.type == AppTransactionType.income,
+        _TransactionFilter.expense =>
+          transaction.type == AppTransactionType.expense,
+      };
+
+      final matchesDate = switch (_dateFilter) {
+        _DateFilter.all => true,
+        _DateFilter.today =>
+          DateTime(
+                transaction.transactionDate.year,
+                transaction.transactionDate.month,
+                transaction.transactionDate.day,
+              ) ==
+              DateTime(now.year, now.month, now.day),
+        _DateFilter.thisMonth => isSameMonth(transaction.transactionDate, now),
+      };
+
+      final matchesCategory =
+          _categoryFilter == 'Tất cả' ||
+          transaction.category == _categoryFilter;
+
+      final searchable = [
+        transaction.title,
+        transaction.note,
+        transaction.category,
+        transaction.paymentMethod,
+      ].whereType<String>().join(' ').toLowerCase();
+
+      return matchesType &&
+          matchesDate &&
+          matchesCategory &&
+          (query.isEmpty || searchable.contains(query));
+    }).toList();
   }
 
   void _openAddTransaction() {
@@ -54,10 +88,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  void _openDetail(_TransactionData transaction) {
+  void _openDetail(AppTransaction transaction) {
     Navigator.of(context).pushNamed(
       AppRoutes.transactionDetail,
-      arguments: transaction.toDetailArgs(),
+      arguments: TransactionDetailArgs(transactionId: transaction.id),
     );
   }
 
@@ -66,14 +100,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       Navigator.of(context).pop();
       return;
     }
-
     Navigator.of(context).pushReplacementNamed(AppRoutes.home);
   }
 
   @override
   Widget build(BuildContext context) {
-    final groups = _groupTransactions(_filteredTransactions);
-
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: AppBar(
@@ -87,19 +118,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           color: AppColors.onSurfaceVariant,
         ),
         title: Text(
-          'Smart Expense',
+          'Giao dịch',
           style: AppTextStyles.headlineLargeMobile.copyWith(
             color: AppColors.primary,
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Tùy chọn',
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded),
-            color: AppColors.onSurfaceVariant,
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddTransaction,
@@ -114,36 +137,58 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 672),
-            child: Column(
-              children: [
-                _SearchAndFilters(
-                  searchController: _searchController,
-                  selectedFilter: _filter,
-                  onSearchChanged: () => setState(() {}),
-                  onFilterChanged: (filter) {
-                    setState(() {
-                      _filter = filter;
-                    });
-                  },
-                ),
-                Expanded(
-                  child: groups.isEmpty
-                      ? const _EmptyTransactions()
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                          children: [
-                            for (final group in groups) ...[
-                              _TransactionGroupSection(
-                                group: group,
-                                onTransactionTap: _openDetail,
-                              ),
-                              const SizedBox(height: 24),
-                            ],
-                            const _EndOfListHint(),
-                          ],
-                        ),
-                ),
-              ],
+            child: StreamBuilder<List<AppTransaction>>(
+              stream: _repository.watchTransactions(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _ErrorState(
+                    message: firebaseAuthErrorMessage(snapshot.error!),
+                  );
+                }
+
+                final transactions = _filterTransactions(snapshot.data ?? []);
+                final groups = _groupTransactions(transactions);
+
+                return Column(
+                  children: [
+                    _SearchAndFilters(
+                      searchController: _searchController,
+                      selectedFilter: _filter,
+                      selectedDateFilter: _dateFilter,
+                      selectedCategory: _categoryFilter,
+                      onSearchChanged: () => setState(() {}),
+                      onFilterChanged: (filter) {
+                        setState(() => _filter = filter);
+                      },
+                      onDateFilterChanged: (filter) {
+                        setState(() => _dateFilter = filter);
+                      },
+                      onCategoryChanged: (category) {
+                        setState(() => _categoryFilter = category ?? 'Tất cả');
+                      },
+                    ),
+                    Expanded(
+                      child: groups.isEmpty
+                          ? const _EmptyTransactions()
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                              children: [
+                                for (final group in groups) ...[
+                                  _TransactionGroupSection(
+                                    group: group,
+                                    onTransactionTap: _openDetail,
+                                  ),
+                                  const SizedBox(height: 20),
+                                ],
+                              ],
+                            ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -156,71 +201,59 @@ class _SearchAndFilters extends StatelessWidget {
   const _SearchAndFilters({
     required this.searchController,
     required this.selectedFilter,
+    required this.selectedDateFilter,
+    required this.selectedCategory,
     required this.onSearchChanged,
     required this.onFilterChanged,
+    required this.onDateFilterChanged,
+    required this.onCategoryChanged,
   });
 
   final TextEditingController searchController;
   final _TransactionFilter selectedFilter;
+  final _DateFilter selectedDateFilter;
+  final String selectedCategory;
   final VoidCallback onSearchChanged;
   final ValueChanged<_TransactionFilter> onFilterChanged;
+  final ValueChanged<_DateFilter> onDateFilterChanged;
+  final ValueChanged<String?> onCategoryChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.surface.withValues(alpha: 0.94),
+      color: AppColors.surface.withValues(alpha: 0.96),
       child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.search_rounded,
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: searchController,
-                      onChanged: (_) => onSearchChanged(),
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurface,
+            child: TextField(
+              controller: searchController,
+              onChanged: (_) => onSearchChanged(),
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm giao dịch...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Xóa tìm kiếm',
+                        onPressed: () {
+                          searchController.clear();
+                          onSearchChanged();
+                        },
+                        icon: const Icon(Icons.close_rounded),
                       ),
-                      decoration: InputDecoration(
-                        hintText: 'Tìm kiếm giao dịch...',
-                        hintStyle: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        border: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                  if (searchController.text.isNotEmpty)
-                    IconButton(
-                      tooltip: 'Xóa tìm kiếm',
-                      onPressed: () {
-                        searchController.clear();
-                        onSearchChanged();
-                      },
-                      icon: const Icon(Icons.close_rounded),
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                ],
+                filled: true,
+                fillColor: AppColors.surfaceContainerLow,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Row(
               children: [
                 _FilterChipButton(
@@ -228,19 +261,53 @@ class _SearchAndFilters extends StatelessWidget {
                   selected: selectedFilter == _TransactionFilter.all,
                   onTap: () => onFilterChanged(_TransactionFilter.all),
                 ),
-                const SizedBox(width: 8),
                 _FilterChipButton(
                   label: 'Thu nhập',
                   selected: selectedFilter == _TransactionFilter.income,
                   onTap: () => onFilterChanged(_TransactionFilter.income),
                 ),
-                const SizedBox(width: 8),
                 _FilterChipButton(
                   label: 'Chi tiêu',
                   selected: selectedFilter == _TransactionFilter.expense,
                   onTap: () => onFilterChanged(_TransactionFilter.expense),
                 ),
+                _FilterChipButton(
+                  label: 'Hôm nay',
+                  selected: selectedDateFilter == _DateFilter.today,
+                  onTap: () => onDateFilterChanged(
+                    selectedDateFilter == _DateFilter.today
+                        ? _DateFilter.all
+                        : _DateFilter.today,
+                  ),
+                ),
+                _FilterChipButton(
+                  label: 'Tháng này',
+                  selected: selectedDateFilter == _DateFilter.thisMonth,
+                  onTap: () => onDateFilterChanged(
+                    selectedDateFilter == _DateFilter.thisMonth
+                        ? _DateFilter.all
+                        : _DateFilter.thisMonth,
+                  ),
+                ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedCategory,
+              decoration: InputDecoration(
+                labelText: 'Danh mục',
+                filled: true,
+                fillColor: AppColors.surfaceContainerLowest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              items: ['Tất cả', ...allCategoryLabels].map((category) {
+                return DropdownMenuItem(value: category, child: Text(category));
+              }).toList(),
+              onChanged: onCategoryChanged,
             ),
           ),
         ],
@@ -262,39 +329,12 @@ class _FilterChipButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primaryContainer
-              : AppColors.surfaceContainer,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (selected) ...[
-              const Icon(
-                Icons.done_rounded,
-                size: 16,
-                color: AppColors.onPrimaryContainer,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              label,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: selected
-                    ? AppColors.onPrimaryContainer
-                    : AppColors.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        selected: selected,
+        label: Text(label),
+        onSelected: (_) => onTap(),
       ),
     );
   }
@@ -307,7 +347,7 @@ class _TransactionGroupSection extends StatelessWidget {
   });
 
   final _TransactionGroup group;
-  final ValueChanged<_TransactionData> onTransactionTap;
+  final ValueChanged<AppTransaction> onTransactionTap;
 
   @override
   Widget build(BuildContext context) {
@@ -316,12 +356,7 @@ class _TransactionGroupSection extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            group.title,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface,
-            ),
-          ),
+          child: Text(group.title, style: AppTextStyles.titleMedium),
         ),
         const SizedBox(height: 8),
         for (final transaction in group.transactions) ...[
@@ -339,17 +374,13 @@ class _TransactionGroupSection extends StatelessWidget {
 class _TransactionCard extends StatelessWidget {
   const _TransactionCard({required this.transaction, required this.onTap});
 
-  final _TransactionData transaction;
+  final AppTransaction transaction;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final amountColor = transaction.isIncome
-        ? AppColors.primary
-        : transaction.prominentExpense
-        ? AppColors.error
-        : AppColors.onSurface;
-
+    final meta = categoryMeta(transaction.category, type: transaction.type);
+    final isIncome = transaction.type == AppTransactionType.income;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -360,28 +391,16 @@ class _TransactionCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.surfaceContainerLowest,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.20),
+            ),
           ),
           child: Row(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: transaction.iconBackground,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  transaction.icon,
-                  color: transaction.iconColor,
-                  size: 26,
-                ),
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: meta.backgroundColor,
+                child: Icon(meta.icon, color: meta.color),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -389,20 +408,15 @@ class _TransactionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      transaction.title,
+                      transaction.title ?? transaction.category,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.titleMedium.copyWith(
-                        color: AppColors.onSurface,
-                      ),
+                      style: AppTextStyles.titleMedium,
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${transaction.time} • ${transaction.method}',
+                      '${formatShortDate(transaction.transactionDate)} • ${transaction.paymentMethod ?? 'Ví cá nhân'}',
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
+                      style: AppTextStyles.labelMedium,
                     ),
                   ],
                 ),
@@ -410,10 +424,12 @@ class _TransactionCard extends StatelessWidget {
               const SizedBox(width: 12),
               Flexible(
                 child: Text(
-                  transaction.amount,
+                  formatTransactionAmount(transaction),
                   textAlign: TextAlign.end,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleMedium.copyWith(color: amountColor),
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: isIncome ? AppColors.secondary : AppColors.error,
+                  ),
                 ),
               ),
             ],
@@ -435,28 +451,16 @@ class _EmptyTransactions extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceContainerHigh,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.receipt_long_outlined,
-                color: AppColors.onSurfaceVariant,
-              ),
+            const CircleAvatar(
+              radius: 32,
+              backgroundColor: AppColors.surfaceContainerHigh,
+              child: Icon(Icons.receipt_long_outlined),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Không tìm thấy giao dịch',
-              style: AppTextStyles.titleMedium.copyWith(
-                color: AppColors.onSurface,
-              ),
-            ),
+            Text('Chưa có giao dịch phù hợp', style: AppTextStyles.titleMedium),
             const SizedBox(height: 4),
             Text(
-              'Thử đổi từ khóa tìm kiếm hoặc bộ lọc.',
+              'Thử đổi từ khóa, bộ lọc hoặc thêm giao dịch mới.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.onSurfaceVariant,
@@ -464,35 +468,6 @@ class _EmptyTransactions extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _EndOfListHint extends StatelessWidget {
-  const _EndOfListHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.check_circle_outline_rounded,
-            size: 16,
-            color: AppColors.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            'Đã hiển thị tất cả giao dịch gần đây',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
-              fontSize: 13,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -507,17 +482,7 @@ class _TransactionsBottomNavBar extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-              blurRadius: 12,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
+        decoration: const BoxDecoration(color: AppColors.surface),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
@@ -575,37 +540,28 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: selected ? null : onTap,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
+        child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.secondaryContainer : Colors.transparent,
-            borderRadius: selected
-                ? BorderRadius.circular(999)
-                : BorderRadius.circular(12),
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: selected
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: AppTextStyles.labelMedium.copyWith(
                   color: selected
-                      ? AppColors.onSecondaryContainer
+                      ? AppColors.primary
                       : AppColors.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: selected
-                        ? AppColors.onSecondaryContainer
-                        : AppColors.onSurfaceVariant,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -613,15 +569,13 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-List<_TransactionGroup> _groupTransactions(
-  List<_TransactionData> transactions,
-) {
-  final groups = <String, List<_TransactionData>>{};
-
+List<_TransactionGroup> _groupTransactions(List<AppTransaction> transactions) {
+  final groups = <String, List<AppTransaction>>{};
   for (final transaction in transactions) {
-    groups.putIfAbsent(transaction.group, () => []).add(transaction);
+    groups
+        .putIfAbsent(formatShortDate(transaction.transactionDate), () => [])
+        .add(transaction);
   }
-
   return groups.entries
       .map((entry) => _TransactionGroup(entry.key, entry.value))
       .toList();
@@ -631,122 +585,16 @@ class _TransactionGroup {
   const _TransactionGroup(this.title, this.transactions);
 
   final String title;
-  final List<_TransactionData> transactions;
+  final List<AppTransaction> transactions;
 }
 
-class _TransactionData {
-  const _TransactionData({
-    required this.group,
-    required this.title,
-    required this.time,
-    required this.method,
-    required this.amount,
-    required this.icon,
-    required this.iconColor,
-    required this.iconBackground,
-    required this.isIncome,
-    required this.category,
-    required this.dateText,
-    required this.note,
-    this.prominentExpense = false,
-  });
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message});
 
-  final String group;
-  final String title;
-  final String time;
-  final String method;
-  final String amount;
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBackground;
-  final bool isIncome;
-  final String category;
-  final String dateText;
-  final String note;
-  final bool prominentExpense;
+  final String message;
 
-  TransactionDetailArgs toDetailArgs() {
-    return TransactionDetailArgs(
-      title: title == 'Ăn trưa' ? 'Ăn trưa tại The Workshop' : title,
-      amount: amount,
-      transactionType: isIncome ? 'Thu nhập' : 'Chi tiêu',
-      category: category,
-      date: dateText,
-      time: time,
-      paymentMethod: method,
-      note: note,
-      createdAt: _createdAt,
-      updatedAt: _createdAt,
-      icon: icon,
-      accentColor: isIncome ? AppColors.primary : iconColor,
-      iconBackgroundColor: iconBackground,
-      isIncome: isIncome,
-    );
-  }
-
-  String get _createdAt {
-    if (group == 'Hôm nay') return '24/10/2023 $time';
-    if (group == 'Hôm qua') return '23/10/2023 $time';
-    return '24/10/2023 $time';
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: Text(message, textAlign: TextAlign.center));
   }
 }
-
-const _transactions = [
-  _TransactionData(
-    group: 'Hôm nay',
-    title: 'Lương tháng 7',
-    time: '08:30 AM',
-    method: 'Chuyển khoản',
-    amount: '+12.000.000 ₫',
-    icon: Icons.account_balance_rounded,
-    iconColor: AppColors.onSecondaryContainer,
-    iconBackground: AppColors.secondaryContainer,
-    isIncome: true,
-    category: 'Lương',
-    dateText: 'Hôm nay, 24 Th10 2023',
-    note: 'Khoản thu nhập được ghi nhận tự động từ tài khoản chính.',
-  ),
-  _TransactionData(
-    group: 'Hôm nay',
-    title: 'Ăn trưa',
-    time: '12:15 PM',
-    method: 'Tiền mặt',
-    amount: '-65.000 ₫',
-    icon: Icons.restaurant_rounded,
-    iconColor: AppColors.error,
-    iconBackground: Color(0x66FFDAD6),
-    isIncome: false,
-    category: 'Ăn uống',
-    dateText: 'Hôm nay, 24 Th10 2023',
-    note: 'Ăn trưa với đồng nghiệp tại quán quen',
-    prominentExpense: true,
-  ),
-  _TransactionData(
-    group: 'Hôm qua',
-    title: 'Cà phê The Workshop',
-    time: '09:00 AM',
-    method: 'Thẻ tín dụng',
-    amount: '-85.000 ₫',
-    icon: Icons.local_cafe_outlined,
-    iconColor: AppColors.onSurfaceVariant,
-    iconBackground: AppColors.surfaceVariant,
-    isIncome: false,
-    category: 'Ăn uống',
-    dateText: 'Hôm qua, 23 Th10 2023',
-    note: 'Cà phê và làm việc buổi sáng.',
-  ),
-  _TransactionData(
-    group: 'Hôm qua',
-    title: 'Grab Bike',
-    time: '06:45 PM',
-    method: 'Ví điện tử',
-    amount: '-32.000 ₫',
-    icon: Icons.directions_car_outlined,
-    iconColor: AppColors.onSurfaceVariant,
-    iconBackground: AppColors.surfaceVariant,
-    isIncome: false,
-    category: 'Di chuyển',
-    dateText: 'Hôm qua, 23 Th10 2023',
-    note: 'Di chuyển từ trường về nhà.',
-  ),
-];

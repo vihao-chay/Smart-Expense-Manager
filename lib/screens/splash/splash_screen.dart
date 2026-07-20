@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/firestore_repository.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,6 +16,8 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _loadingController;
+  final _authRepository = AuthRepository();
+  final _firestoreRepository = FirestoreRepository();
 
   @override
   void initState() {
@@ -22,14 +26,31 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat();
-    _openRegisterScreen();
+    _openInitialRoute();
   }
 
-  Future<void> _openRegisterScreen() async {
+  Future<void> _openInitialRoute() async {
     await Future<void>.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+    final user = _authRepository.currentUser;
+    if (user == null) {
+      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      return;
+    }
+
+    try {
+      final profile = await _firestoreRepository.fetchProfile();
+      if (!mounted) return;
+
+      final route = profile != null && !profile.hasCompletedOnboarding
+          ? AppRoutes.onboarding
+          : AppRoutes.home;
+      Navigator.of(context).pushReplacementNamed(route);
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+    }
   }
 
   @override
