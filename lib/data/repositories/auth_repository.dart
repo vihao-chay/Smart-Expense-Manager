@@ -109,6 +109,24 @@ class AuthRepository {
     return _auth.sendPasswordResetEmail(email: email.trim());
   }
 
+  Future<void> updateCurrentUserProfile({
+    required String fullName,
+    String? avatarUrl,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: 'Bạn cần đăng nhập để cập nhật hồ sơ.',
+      );
+    }
+
+    await user.updateDisplayName(fullName.trim());
+    await user.updatePhotoURL(
+      avatarUrl?.trim().isEmpty == true ? null : avatarUrl?.trim(),
+    );
+  }
+
   Future<void> signOut() async {
     await _auth.signOut();
     if (!_isGoogleSignInSupported) return;

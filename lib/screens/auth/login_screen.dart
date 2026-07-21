@@ -53,6 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await _firestoreRepository.markOnboardingCompleted();
         final settings = await _firestoreRepository.fetchSettings();
         ThemeController.instance.applyFirestoreValue(settings.themeMode);
+        await _firestoreRepository.createDailyReminderIfNeeded(settings);
       } catch (_) {
         // Existing accounts can still enter Home even if profile sync fails.
       }
@@ -85,6 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final profile = await _firestoreRepository.fetchProfile();
       final settings = await _firestoreRepository.fetchSettings();
       ThemeController.instance.applyFirestoreValue(settings.themeMode);
+      await _firestoreRepository.createDailyReminderIfNeeded(settings);
       if (!mounted) return;
       final route = profile != null && profile.hasCompletedOnboarding
           ? AppRoutes.home

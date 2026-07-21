@@ -60,6 +60,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email: _emailController.text,
         password: _passwordController.text,
       );
+      try {
+        await _firestoreRepository.createDailyReminderIfNeeded();
+      } catch (_) {
+        // Reminder creation should not block registration.
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đăng ký tài khoản thành công.')),
@@ -91,6 +96,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       await _authRepository.signInWithGoogle();
       final profile = await _firestoreRepository.fetchProfile();
+      try {
+        await _firestoreRepository.createDailyReminderIfNeeded();
+      } catch (_) {
+        // Reminder creation should not block sign-in.
+      }
       if (!mounted) return;
       final route = profile != null && profile.hasCompletedOnboarding
           ? AppRoutes.home

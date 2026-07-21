@@ -228,41 +228,52 @@ class _QuickActions extends StatelessWidget {
       );
     }
 
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 0.82,
-      children: [
-        _QuickActionButton(
-          label: 'Thêm thu',
-          icon: Icons.add_circle_outline_rounded,
-          color: AppColors.secondary,
-          onTap: () => openAddTransaction(AddTransactionType.income),
-        ),
-        _QuickActionButton(
-          label: 'Thêm chi',
-          icon: Icons.remove_circle_outline_rounded,
-          color: AppColors.error,
-          onTap: () => openAddTransaction(AddTransactionType.expense),
-        ),
-        _QuickActionButton(
-          label: 'Đổi tiền',
-          icon: Icons.currency_exchange_rounded,
-          color: AppColors.primary,
-          onTap: () =>
-              Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
-        ),
-        _QuickActionButton(
-          label: 'Ngân sách',
-          icon: Icons.pie_chart_outline_rounded,
-          color: AppColors.tertiary,
-          onTap: () =>
-              Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GridView.count(
+          crossAxisCount: constraints.maxWidth >= 520 ? 5 : 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 0.82,
+          children: [
+            _QuickActionButton(
+              label: 'Thêm thu',
+              icon: Icons.add_circle_outline_rounded,
+              color: AppColors.secondary,
+              onTap: () => openAddTransaction(AddTransactionType.income),
+            ),
+            _QuickActionButton(
+              label: 'Thêm chi',
+              icon: Icons.remove_circle_outline_rounded,
+              color: AppColors.error,
+              onTap: () => openAddTransaction(AddTransactionType.expense),
+            ),
+            _QuickActionButton(
+              label: 'Đổi tiền',
+              icon: Icons.currency_exchange_rounded,
+              color: AppColors.primary,
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
+            ),
+            _QuickActionButton(
+              label: 'Ngân sách',
+              icon: Icons.pie_chart_outline_rounded,
+              color: AppColors.tertiary,
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
+            ),
+            _QuickActionButton(
+              label: 'AI',
+              icon: Icons.auto_awesome_rounded,
+              color: const Color(0xFF7C3AED),
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.aiInsights),
+            ),
+          ],
+        );
+      },
     );
   }
 }

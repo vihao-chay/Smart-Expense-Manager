@@ -279,7 +279,7 @@ class _BudgetCategoryCard extends StatelessWidget {
     );
     try {
       await repository.setBudget(saved);
-      await repository.addNotification(
+      await repository.addNotificationIfEnabled(
         AppNotification(
           id: '',
           title: 'Đã cập nhật ngân sách',

@@ -141,6 +141,7 @@ class _NotificationTile extends StatelessWidget {
     final color = switch (notification.type) {
       'budget' => AppColors.tertiary,
       'transaction' => AppColors.primary,
+      'reminder' => AppColors.secondary,
       _ => AppColors.secondary,
     };
     return Material(

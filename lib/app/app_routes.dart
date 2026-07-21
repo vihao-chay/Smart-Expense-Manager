@@ -12,7 +12,9 @@ abstract final class AppRoutes {
   static const notifications = '/notifications';
   static const statistics = '/statistics';
   static const profile = '/profile';
+  static const editProfile = '/edit-profile';
   static const settings = '/settings';
+  static const aiInsights = '/ai-insights';
   static const register = '/register';
   static const forgotPassword = '/forgot-password';
 }

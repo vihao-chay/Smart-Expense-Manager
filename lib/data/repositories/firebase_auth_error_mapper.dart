@@ -42,6 +42,9 @@ String firebaseAuthErrorMessage(Object error) {
     return switch (error.code) {
       'permission-denied' =>
         'Firestore đang chặn ghi dữ liệu. Hãy kiểm tra lại Rules.',
+      'unauthorized' =>
+        'Firebase Storage đang chặn tải ảnh. Hãy kiểm tra Storage Rules.',
+      'object-not-found' => 'Không tìm thấy file ảnh trên Firebase Storage.',
       'unavailable' => 'Firebase tạm thời không khả dụng. Hãy thử lại sau.',
       _ => error.message ?? 'Đã có lỗi Firebase xảy ra. Vui lòng thử lại.',
     };

@@ -45,6 +45,7 @@ class _SplashScreenState extends State<SplashScreen>
       try {
         final settings = await _firestoreRepository.fetchSettings();
         ThemeController.instance.applyFirestoreValue(settings.themeMode);
+        await _firestoreRepository.createDailyReminderIfNeeded(settings);
       } catch (_) {
         // Theme loading should not block app startup.
       }

@@ -41,6 +41,16 @@ class ProfileScreen extends StatelessWidget {
                             children: [
                               _ProfileHeader(profile: profile),
                               const SizedBox(height: 16),
+                              _MenuTile(
+                                icon: Icons.edit_outlined,
+                                title: 'Chỉnh sửa hồ sơ',
+                                subtitle: 'Cập nhật tên và ảnh đại diện',
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed(AppRoutes.editProfile);
+                                },
+                              ),
                               _ThemeModeTile(repository: repository),
                               const SizedBox(height: 10),
                               _MenuTile(
@@ -51,26 +61,6 @@ class ProfileScreen extends StatelessWidget {
                                   Navigator.of(
                                     context,
                                   ).pushNamed(AppRoutes.settings);
-                                },
-                              ),
-                              _MenuTile(
-                                icon: Icons.receipt_long_outlined,
-                                title: 'Lịch sử giao dịch',
-                                subtitle: 'Xem, tìm kiếm và lọc giao dịch',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.transactions);
-                                },
-                              ),
-                              _MenuTile(
-                                icon: Icons.leaderboard_outlined,
-                                title: 'Thống kê',
-                                subtitle: 'Biểu đồ thu chi và danh mục',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.statistics);
                                 },
                               ),
                               const SizedBox(height: 12),

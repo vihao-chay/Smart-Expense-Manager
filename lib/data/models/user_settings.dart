@@ -5,16 +5,16 @@ class UserSettings {
     this.themeMode = 'light',
     this.notificationEnabled = true,
     this.dailyReminderEnabled = true,
-    this.language = 'vi',
     this.currency = 'VND',
+    this.lastDailyReminderDate,
     this.updatedAt,
   });
 
   final String themeMode;
   final bool notificationEnabled;
   final bool dailyReminderEnabled;
-  final String language;
   final String currency;
+  final String? lastDailyReminderDate;
   final DateTime? updatedAt;
 
   factory UserSettings.fromFirestore(
@@ -25,8 +25,8 @@ class UserSettings {
       themeMode: data['themeMode'] as String? ?? 'light',
       notificationEnabled: data['notificationEnabled'] as bool? ?? true,
       dailyReminderEnabled: data['dailyReminderEnabled'] as bool? ?? true,
-      language: data['language'] as String? ?? 'vi',
       currency: data['currency'] as String? ?? 'VND',
+      lastDailyReminderDate: data['lastDailyReminderDate'] as String?,
       updatedAt: _dateFromFirestore(data['updatedAt']),
     );
   }
@@ -36,8 +36,8 @@ class UserSettings {
       'themeMode': themeMode,
       'notificationEnabled': notificationEnabled,
       'dailyReminderEnabled': dailyReminderEnabled,
-      'language': language,
       'currency': currency,
+      'lastDailyReminderDate': lastDailyReminderDate,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
@@ -46,16 +46,17 @@ class UserSettings {
     String? themeMode,
     bool? notificationEnabled,
     bool? dailyReminderEnabled,
-    String? language,
     String? currency,
+    String? lastDailyReminderDate,
     DateTime? updatedAt,
   }) {
     return UserSettings(
       themeMode: themeMode ?? this.themeMode,
       notificationEnabled: notificationEnabled ?? this.notificationEnabled,
       dailyReminderEnabled: dailyReminderEnabled ?? this.dailyReminderEnabled,
-      language: language ?? this.language,
       currency: currency ?? this.currency,
+      lastDailyReminderDate:
+          lastDailyReminderDate ?? this.lastDailyReminderDate,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

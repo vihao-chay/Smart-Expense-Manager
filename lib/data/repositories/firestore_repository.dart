@@ -166,8 +166,43 @@ class FirestoreRepository {
     return _notifications.add(notification.toCreateMap());
   }
 
+  Future<void> addNotificationIfEnabled(AppNotification notification) async {
+    final settings = await fetchSettings();
+    if (!settings.notificationEnabled) return;
+    await addNotification(notification);
+  }
+
+  Future<void> createDailyReminderIfNeeded([UserSettings? settings]) async {
+    final currentSettings = settings ?? await fetchSettings();
+    if (!currentSettings.notificationEnabled ||
+        !currentSettings.dailyReminderEnabled) {
+      return;
+    }
+
+    final today = _dateKey(DateTime.now());
+    if (currentSettings.lastDailyReminderDate == today) return;
+
+    await addNotification(
+      const AppNotification(
+        id: '',
+        title: 'Nhắc ghi chép chi tiêu',
+        body: 'Đừng quên cập nhật các khoản thu chi hôm nay.',
+        type: 'reminder',
+        isRead: false,
+      ),
+    );
+    await saveSettings(currentSettings.copyWith(lastDailyReminderDate: today));
+  }
+
   Future<void> markNotificationAsRead(String notificationId) {
     return _notifications.doc(notificationId).update({'isRead': true});
+  }
+
+  Future<void> updateDefaultCurrency(String currency) {
+    return _userDoc.set({
+      'defaultCurrency': currency,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<UserSettings> fetchSettings() async {
@@ -186,4 +221,10 @@ class FirestoreRepository {
   Future<void> saveSettings(UserSettings settings) {
     return _settingsDoc.set(settings.toFirestore(), SetOptions(merge: true));
   }
+}
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
 }
