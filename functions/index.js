@@ -4,14 +4,36 @@ const logger = require("firebase-functions/logger");
 
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
-const region = "asia-southeast1";
+const region = "us-central1";
 const defaultModel = "gemini-3.5-flash";
 const maxPromptLength = 12000;
+const defaultMaxOutputTokens = 2200;
+const maxOutputTokenLimit = 3600;
+const insightResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    insights: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          analysis: { type: "STRING" },
+          action: { type: "STRING" },
+        },
+        required: ["title", "analysis", "action"],
+        propertyOrdering: ["title", "analysis", "action"],
+      },
+    },
+  },
+  required: ["insights"],
+  propertyOrdering: ["insights"],
+};
 
 exports.generateaiinsights = onCall(
   {
     region,
-    timeoutSeconds: 60,
+    timeoutSeconds: 90,
     memory: "256MiB",
     secrets: [geminiApiKey],
   },
@@ -25,6 +47,7 @@ exports.generateaiinsights = onCall(
 
     const prompt = sanitizePrompt(request.data?.prompt);
     const model = sanitizeModel(request.data?.model);
+    const maxOutputTokens = sanitizeMaxOutputTokens(request.data?.maxOutputTokens);
     const apiKey = geminiApiKey.value();
 
     try {
@@ -37,14 +60,30 @@ exports.generateaiinsights = onCall(
             "x-goog-api-key": apiKey,
           },
           body: JSON.stringify({
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    "Bạn là chuyên gia phân tích tài chính cá nhân. " +
+                    "Luôn trả lời bằng tiếng Việt. " +
+                    "Tạo đúng 6 đến 8 mục phân tích. " +
+                    "Mỗi mục phải có title, analysis và action. " +
+                    "analysis phải có số liệu cụ thể; action phải là hành động thực tế. " +
+                    "Không chỉ chào hỏi, không viết câu mở bài.",
+                },
+              ],
+            },
             contents: [
               {
                 parts: [{ text: prompt }],
               },
             ],
             generationConfig: {
-              temperature: 0.35,
-              maxOutputTokens: 800,
+              temperature: 0.45,
+              topP: 0.95,
+              maxOutputTokens,
+              responseMimeType: "application/json",
+              responseSchema: insightResponseSchema,
             },
           }),
         },
@@ -114,6 +153,11 @@ function sanitizeModel(value) {
   return model;
 }
 
+function sanitizeMaxOutputTokens(value) {
+  if (!Number.isInteger(value)) return defaultMaxOutputTokens;
+  return Math.min(Math.max(value, 512), maxOutputTokenLimit);
+}
+
 function parseJson(value) {
   try {
     return JSON.parse(value);
@@ -125,10 +169,48 @@ function parseJson(value) {
 function extractGeminiText(decoded) {
   const parts = decoded?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return "";
-  return parts
+  const rawText = parts
     .map((part) => (typeof part.text === "string" ? part.text : ""))
     .join("\n")
     .trim();
+
+  const structured = parseJson(stripJsonFence(rawText));
+  const formatted = formatStructuredInsights(structured);
+  return formatted || rawText;
+}
+
+function stripJsonFence(value) {
+  return value
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+function formatStructuredInsights(value) {
+  const insights = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.insights)
+      ? value.insights
+      : [];
+  if (insights.length === 0) return "";
+
+  return insights
+    .slice(0, 8)
+    .map((item) => {
+      const title = cleanInsightText(item?.title) || "Nhận xét";
+      const analysis = cleanInsightText(item?.analysis);
+      const action = cleanInsightText(item?.action);
+      if (!analysis && !action) return "";
+      return `- ${title}: ${analysis}${analysis && action ? " " : ""}${action}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function cleanInsightText(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function geminiErrorMessage(decoded, status) {
