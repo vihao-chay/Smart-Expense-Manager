@@ -106,7 +106,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       );
 
       await _repository.addTransaction(transaction);
-      await _repository.addNotification(
+      await _repository.addNotificationIfEnabled(
         AppNotification(
           id: '',
           title: _type == AppTransactionType.income

@@ -264,7 +264,7 @@ class _DefaultState extends StatelessWidget {
                 textStyle: AppTextStyles.titleMedium,
               ),
               child: isSubmitting
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
@@ -316,15 +316,15 @@ class _EmailField extends StatelessWidget {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.outlineVariant),
+              borderSide: BorderSide(color: AppColors.outlineVariant),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.outlineVariant),
+              borderSide: BorderSide(color: AppColors.outlineVariant),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.primary),
+              borderSide: BorderSide(color: AppColors.primary),
             ),
           ),
           validator: (value) {
@@ -365,11 +365,11 @@ class _SuccessState extends StatelessWidget {
           child: Container(
             width: 64,
             height: 64,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.secondaryContainer,
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.check_circle_outline_rounded,
               color: AppColors.onSecondaryContainer,
               size: 36,
@@ -397,7 +397,7 @@ class _SuccessState extends StatelessWidget {
             onPressed: onBackPressed,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primaryContainer,
-              side: const BorderSide(color: AppColors.primaryContainer),
+              side: BorderSide(color: AppColors.primaryContainer),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),

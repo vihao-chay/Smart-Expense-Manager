@@ -13,9 +13,27 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final repository = FirestoreRepository();
 
-    Future<void> save(UserSettings settings) async {
+    Future<void> save(
+      UserSettings settings, {
+      bool checkDailyReminder = false,
+    }) async {
       try {
         await repository.saveSettings(settings);
+        if (checkDailyReminder) {
+          await repository.createDailyReminderIfNeeded(settings);
+        }
+      } catch (error) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(firebaseAuthErrorMessage(error))),
+        );
+      }
+    }
+
+    Future<void> saveCurrency(UserSettings settings, String currency) async {
+      try {
+        await repository.saveSettings(settings.copyWith(currency: currency));
+        await repository.updateDefaultCurrency(currency);
       } catch (error) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -66,7 +84,10 @@ class SettingsScreen extends StatelessWidget {
                             'Nhận cập nhật ngân sách và giao dịch',
                           ),
                           onChanged: (value) {
-                            save(settings.copyWith(notificationEnabled: value));
+                            save(
+                              settings.copyWith(notificationEnabled: value),
+                              checkDailyReminder: value,
+                            );
                           },
                         ),
                         SwitchListTile(
@@ -82,6 +103,7 @@ class SettingsScreen extends StatelessWidget {
                                     settings.copyWith(
                                       dailyReminderEnabled: value,
                                     ),
+                                    checkDailyReminder: value,
                                   );
                                 }
                               : null,
@@ -90,30 +112,8 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     _SectionCard(
-                      title: 'Tùy chọn',
+                      title: 'Tiền tệ',
                       children: [
-                        DropdownButtonFormField<String>(
-                          initialValue: settings.language,
-                          decoration: const InputDecoration(
-                            labelText: 'Ngôn ngữ',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'vi',
-                              child: Text('Tiếng Việt'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'en',
-                              child: Text('English'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) return;
-                            save(settings.copyWith(language: value));
-                          },
-                        ),
-                        const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           initialValue: settings.currency,
                           decoration: const InputDecoration(
@@ -128,7 +128,7 @@ class SettingsScreen extends StatelessWidget {
                           ],
                           onChanged: (value) {
                             if (value == null) return;
-                            save(settings.copyWith(currency: value));
+                            saveCurrency(settings, value);
                           },
                         ),
                       ],

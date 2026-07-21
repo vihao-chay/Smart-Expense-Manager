@@ -34,11 +34,16 @@ class AuthRepository {
   Future<UserCredential> signIn({
     required String email,
     required String password,
-  }) {
-    return _auth.signInWithEmailAndPassword(
+  }) async {
+    final credential = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
     );
+    final user = credential.user;
+    if (user != null) {
+      await _ensureUserProfile(user);
+    }
+    return credential;
   }
 
   Future<UserCredential> signInWithGoogle() async {
@@ -104,6 +109,24 @@ class AuthRepository {
     return _auth.sendPasswordResetEmail(email: email.trim());
   }
 
+  Future<void> updateCurrentUserProfile({
+    required String fullName,
+    String? avatarUrl,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: 'Bạn cần đăng nhập để cập nhật hồ sơ.',
+      );
+    }
+
+    await user.updateDisplayName(fullName.trim());
+    await user.updatePhotoURL(
+      avatarUrl?.trim().isEmpty == true ? null : avatarUrl?.trim(),
+    );
+  }
+
   Future<void> signOut() async {
     await _auth.signOut();
     if (!_isGoogleSignInSupported) return;
@@ -123,6 +146,15 @@ class AuthRepository {
   Future<void> _ensureUserProfile(User user, {String? fallbackFullName}) async {
     final userDoc = _firestore.collection('users').doc(user.uid);
     final snapshot = await userDoc.get();
+
+    final status = snapshot.data()?['status'] as String? ?? 'active';
+    if (status == 'locked') {
+      await signOut();
+      throw FirebaseAuthException(
+        code: 'user-disabled',
+        message: 'Tài khoản đã bị khóa bởi quản trị viên.',
+      );
+    }
 
     if (!snapshot.exists) {
       final profile = AppUserProfile(

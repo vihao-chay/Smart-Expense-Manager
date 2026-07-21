@@ -274,7 +274,7 @@ class _DetailBody extends StatelessWidget {
                     onPressed: isDeleting ? null : onDelete,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
+                      side: BorderSide(color: AppColors.error),
                     ),
                     child: isDeleting
                         ? const SizedBox.square(

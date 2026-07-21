@@ -6,8 +6,11 @@ class AppUserProfile {
     required this.fullName,
     required this.email,
     this.avatarUrl,
+    this.avatarStoragePath,
     this.defaultCurrency = 'VND',
     this.hasCompletedOnboarding = false,
+    this.role = 'user',
+    this.status = 'active',
     this.createdAt,
     this.updatedAt,
   });
@@ -16,10 +19,15 @@ class AppUserProfile {
   final String fullName;
   final String email;
   final String? avatarUrl;
+  final String? avatarStoragePath;
   final String defaultCurrency;
   final bool hasCompletedOnboarding;
+  final String role;
+  final String status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isLocked => status == 'locked';
 
   factory AppUserProfile.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -30,8 +38,11 @@ class AppUserProfile {
       fullName: data['fullName'] as String? ?? '',
       email: data['email'] as String? ?? '',
       avatarUrl: data['avatarUrl'] as String?,
+      avatarStoragePath: data['avatarStoragePath'] as String?,
       defaultCurrency: data['defaultCurrency'] as String? ?? 'VND',
       hasCompletedOnboarding: data['hasCompletedOnboarding'] as bool? ?? false,
+      role: data['role'] as String? ?? 'user',
+      status: data['status'] as String? ?? 'active',
       createdAt: _dateFromFirestore(data['createdAt']),
       updatedAt: _dateFromFirestore(data['updatedAt']),
     );
@@ -42,8 +53,11 @@ class AppUserProfile {
       'fullName': fullName,
       'email': email,
       'avatarUrl': avatarUrl,
+      'avatarStoragePath': avatarStoragePath,
       'defaultCurrency': defaultCurrency,
       'hasCompletedOnboarding': hasCompletedOnboarding,
+      'role': role,
+      'status': status,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -54,10 +68,44 @@ class AppUserProfile {
       'fullName': fullName,
       'email': email,
       'avatarUrl': avatarUrl,
+      'avatarStoragePath': avatarStoragePath,
       'defaultCurrency': defaultCurrency,
       'hasCompletedOnboarding': hasCompletedOnboarding,
       'updatedAt': FieldValue.serverTimestamp(),
     };
+  }
+
+  AppUserProfile copyWith({
+    String? uid,
+    String? fullName,
+    String? email,
+    String? avatarUrl,
+    bool clearAvatarUrl = false,
+    String? avatarStoragePath,
+    bool clearAvatarStoragePath = false,
+    String? defaultCurrency,
+    bool? hasCompletedOnboarding,
+    String? role,
+    String? status,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return AppUserProfile(
+      uid: uid ?? this.uid,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      avatarUrl: clearAvatarUrl ? null : avatarUrl ?? this.avatarUrl,
+      avatarStoragePath: clearAvatarStoragePath
+          ? null
+          : avatarStoragePath ?? this.avatarStoragePath,
+      defaultCurrency: defaultCurrency ?? this.defaultCurrency,
+      hasCompletedOnboarding:
+          hasCompletedOnboarding ?? this.hasCompletedOnboarding,
+      role: role ?? this.role,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }
 

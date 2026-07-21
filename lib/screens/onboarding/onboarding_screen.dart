@@ -259,7 +259,7 @@ class _OnboardingControls extends StatelessWidget {
                 elevation: 2,
               ),
               child: isFinishing
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
@@ -308,9 +308,7 @@ class _IllustrationPlaceholder extends StatelessWidget {
         color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(24),
       ),
-      child: const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      ),
+      child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
     );
   }
 }

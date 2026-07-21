@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_formatters.dart';
+import '../../data/repositories/firestore_repository.dart';
 import '../../data/services/exchange_rate_service.dart';
 
 class CurrencyConverterScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class CurrencyConverterScreen extends StatefulWidget {
 class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   final _amountController = TextEditingController(text: '1');
   final _service = ExchangeRateService();
+  final _repository = FirestoreRepository();
 
   var _fromCurrency = 'USD';
   var _toCurrency = 'VND';
@@ -26,6 +28,7 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   void initState() {
     super.initState();
     _ratesFuture = _service.latest(_fromCurrency);
+    _loadDefaultCurrency();
   }
 
   @override
@@ -38,6 +41,22 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
     setState(() {
       _ratesFuture = _service.latest(_fromCurrency);
     });
+  }
+
+  Future<void> _loadDefaultCurrency() async {
+    try {
+      final settings = await _repository.fetchSettings();
+      final defaultCurrency = _normalizeCurrency(settings.currency);
+      if (!mounted || defaultCurrency == _toCurrency) return;
+
+      setState(() {
+        _toCurrency = defaultCurrency;
+        _fromCurrency = defaultCurrency == 'USD' ? 'VND' : 'USD';
+        _ratesFuture = _service.latest(_fromCurrency);
+      });
+    } catch (_) {
+      // Currency converter can still work with the built-in default.
+    }
   }
 
   @override
@@ -422,3 +441,7 @@ String _formatCurrencyAmount(double amount, String currency) {
 }
 
 const _currencies = ['VND', 'USD', 'EUR', 'JPY', 'KRW', 'GBP', 'AUD', 'SGD'];
+
+String _normalizeCurrency(String currency) {
+  return _currencies.contains(currency) ? currency : 'VND';
+}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/theme/theme_controller.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/firestore_repository.dart';
 
@@ -41,7 +42,21 @@ class _SplashScreenState extends State<SplashScreen>
 
     try {
       final profile = await _firestoreRepository.fetchProfile();
+      try {
+        final settings = await _firestoreRepository.fetchSettings();
+        ThemeController.instance.applyFirestoreValue(settings.themeMode);
+        await _firestoreRepository.createDailyReminderIfNeeded(settings);
+      } catch (_) {
+        // Theme loading should not block app startup.
+      }
       if (!mounted) return;
+
+      if (profile?.isLocked == true) {
+        await _authRepository.signOut();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+        return;
+      }
 
       final route = profile != null && !profile.hasCompletedOnboarding
           ? AppRoutes.onboarding
@@ -65,9 +80,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         alignment: Alignment.center,
         children: [
-          const Positioned.fill(
-            child: ColoredBox(color: AppColors.surfaceBright),
-          ),
+          Positioned.fill(child: ColoredBox(color: AppColors.surfaceBright)),
           const _BackgroundGlow(),
           SafeArea(
             child: Padding(
@@ -188,7 +201,7 @@ class _AppLogo extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(
+            child: Icon(
               Icons.account_balance_wallet_rounded,
               size: 48,
               color: AppColors.onPrimaryContainer,
@@ -211,7 +224,7 @@ class _AppLogo extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.show_chart_rounded,
                 size: 24,
                 color: AppColors.onSecondaryContainer,
@@ -275,7 +288,7 @@ class _Dot extends StatelessWidget {
     return Container(
       width: 12,
       height: 12,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.primary,
         shape: BoxShape.circle,
       ),

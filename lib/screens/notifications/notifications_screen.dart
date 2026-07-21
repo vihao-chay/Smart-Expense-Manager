@@ -141,6 +141,7 @@ class _NotificationTile extends StatelessWidget {
     final color = switch (notification.type) {
       'budget' => AppColors.tertiary,
       'transaction' => AppColors.primary,
+      'reminder' => AppColors.secondary,
       _ => AppColors.secondary,
     };
     return Material(
@@ -186,7 +187,7 @@ class _NotificationTile extends StatelessWidget {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.error,
                     shape: BoxShape.circle,
                   ),

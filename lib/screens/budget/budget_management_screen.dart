@@ -168,6 +168,13 @@ class _SummaryCard extends StatelessWidget {
               color: percent > 1 ? AppColors.error : AppColors.primary,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Đã chi / Tổng ngân sách',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 12),
           LinearProgressIndicator(
             value: percent.clamp(0, 1),
@@ -251,69 +258,17 @@ class _BudgetCategoryCard extends StatelessWidget {
   }
 
   Future<void> _showBudgetSheet(BuildContext context) async {
-    final controller = TextEditingController(
-      text: budget == null ? '' : budget!.limitAmount.toString(),
-    );
-    final formKey = GlobalKey<FormState>();
-
     final amount = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Đặt ngân sách ${category.label}',
-                  style: AppTextStyles.titleMedium,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    labelText: 'Số tiền',
-                    suffixText: 'VND',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    final amount = int.tryParse(value ?? '') ?? 0;
-                    if (amount <= 0) return 'Nhập số tiền lớn hơn 0';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () {
-                      if (!(formKey.currentState?.validate() ?? false)) return;
-                      Navigator.of(context).pop(int.parse(controller.text));
-                    },
-                    child: const Text('Lưu ngân sách'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      useSafeArea: true,
+      builder: (context) => _BudgetInputSheet(
+        category: category.label,
+        initialAmount: budget?.limitAmount,
+      ),
     );
 
-    controller.dispose();
-    if (amount == null) return;
+    if (!context.mounted || amount == null) return;
 
     final saved = AppBudget(
       id: budget?.id ?? '',
@@ -322,14 +277,109 @@ class _BudgetCategoryCard extends StatelessWidget {
       period: BudgetPeriod.monthly,
       periodKey: periodKey,
     );
-    await repository.setBudget(saved);
-    await repository.addNotification(
-      AppNotification(
-        id: '',
-        title: 'Đã cập nhật ngân sách',
-        body: '${category.label}: ${formatVnd(amount)}',
-        type: 'budget',
-        isRead: false,
+    try {
+      await repository.setBudget(saved);
+      await repository.addNotificationIfEnabled(
+        AppNotification(
+          id: '',
+          title: 'Đã cập nhật ngân sách',
+          body: '${category.label}: ${formatVnd(amount)}',
+          type: 'budget',
+          isRead: false,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    }
+  }
+}
+
+class _BudgetInputSheet extends StatefulWidget {
+  const _BudgetInputSheet({required this.category, this.initialAmount});
+
+  final String category;
+  final int? initialAmount;
+
+  @override
+  State<_BudgetInputSheet> createState() => _BudgetInputSheetState();
+}
+
+class _BudgetInputSheetState extends State<_BudgetInputSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialAmount == null ? '' : widget.initialAmount.toString(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop(int.parse(_controller.text));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Đặt ngân sách ${widget.category}',
+              style: AppTextStyles.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Số tiền',
+                suffixText: 'VND',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                final amount = int.tryParse(value ?? '') ?? 0;
+                if (amount <= 0) return 'Nhập số tiền lớn hơn 0';
+                return null;
+              },
+              onFieldSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _submit,
+                child: const Text('Lưu ngân sách'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

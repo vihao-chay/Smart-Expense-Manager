@@ -5,7 +5,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_formatters.dart';
 import '../../core/utils/category_catalog.dart';
+import '../../core/widgets/app_top_bar.dart';
 import '../../data/models/app_transaction.dart';
+import '../../data/models/app_user_profile.dart';
 import '../../data/repositories/firebase_auth_error_mapper.dart';
 import '../../data/repositories/firestore_repository.dart';
 import '../add_transaction/add_transaction_screen.dart';
@@ -14,6 +16,13 @@ import '../transaction_detail/transaction_detail_screen.dart';
 enum _TransactionFilter { all, income, expense }
 
 enum _DateFilter { all, today, thisMonth }
+
+class TransactionsArgs {
+  const TransactionsArgs({this.initialType, this.initialCategory});
+
+  final AppTransactionType? initialType;
+  final String? initialCategory;
+}
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
@@ -29,6 +38,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   var _filter = _TransactionFilter.all;
   var _dateFilter = _DateFilter.all;
   var _categoryFilter = 'Tất cả';
+  var _didApplyRouteArgs = false;
 
   @override
   void dispose() {
@@ -95,35 +105,31 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  void _goBack() {
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-      return;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didApplyRouteArgs) return;
+    _didApplyRouteArgs = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! TransactionsArgs) return;
+
+    _filter = switch (args.initialType) {
+      AppTransactionType.income => _TransactionFilter.income,
+      AppTransactionType.expense => _TransactionFilter.expense,
+      null => _TransactionFilter.all,
+    };
+
+    final category = args.initialCategory?.trim();
+    if (category != null && category.isNotEmpty) {
+      _categoryFilter = category;
     }
-    Navigator.of(context).pushReplacementNamed(AppRoutes.home);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surface,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          tooltip: 'Quay lại',
-          onPressed: _goBack,
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: AppColors.onSurfaceVariant,
-        ),
-        title: Text(
-          'Giao dịch',
-          style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.primary,
-          ),
-        ),
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddTransaction,
         backgroundColor: AppColors.primaryContainer,
@@ -133,58 +139,84 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       ),
       bottomNavigationBar: const _TransactionsBottomNavBar(),
       body: SafeArea(
-        top: false,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 672),
-            child: StreamBuilder<List<AppTransaction>>(
-              stream: _repository.watchTransactions(),
+            child: StreamBuilder<AppUserProfile?>(
+              stream: _repository.watchProfile(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return _ErrorState(
-                    message: firebaseAuthErrorMessage(snapshot.error!),
-                  );
-                }
-
-                final transactions = _filterTransactions(snapshot.data ?? []);
-                final groups = _groupTransactions(transactions);
-
                 return Column(
                   children: [
-                    _SearchAndFilters(
-                      searchController: _searchController,
-                      selectedFilter: _filter,
-                      selectedDateFilter: _dateFilter,
-                      selectedCategory: _categoryFilter,
-                      onSearchChanged: () => setState(() {}),
-                      onFilterChanged: (filter) {
-                        setState(() => _filter = filter);
-                      },
-                      onDateFilterChanged: (filter) {
-                        setState(() => _dateFilter = filter);
-                      },
-                      onCategoryChanged: (category) {
-                        setState(() => _categoryFilter = category ?? 'Tất cả');
-                      },
-                    ),
+                    AppTopBar(profile: snapshot.data),
                     Expanded(
-                      child: groups.isEmpty
-                          ? const _EmptyTransactions()
-                          : ListView(
-                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                              children: [
-                                for (final group in groups) ...[
-                                  _TransactionGroupSection(
-                                    group: group,
-                                    onTransactionTap: _openDetail,
-                                  ),
-                                  const SizedBox(height: 20),
-                                ],
-                              ],
-                            ),
+                      child: StreamBuilder<List<AppTransaction>>(
+                        stream: _repository.watchTransactions(),
+                        builder: (context, transactionSnapshot) {
+                          if (transactionSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          if (transactionSnapshot.hasError) {
+                            return _ErrorState(
+                              message: firebaseAuthErrorMessage(
+                                transactionSnapshot.error!,
+                              ),
+                            );
+                          }
+
+                          final transactions = _filterTransactions(
+                            transactionSnapshot.data ?? [],
+                          );
+                          final groups = _groupTransactions(transactions);
+
+                          return Column(
+                            children: [
+                              _SearchAndFilters(
+                                searchController: _searchController,
+                                selectedFilter: _filter,
+                                selectedDateFilter: _dateFilter,
+                                selectedCategory: _categoryFilter,
+                                onSearchChanged: () => setState(() {}),
+                                onFilterChanged: (filter) {
+                                  setState(() => _filter = filter);
+                                },
+                                onDateFilterChanged: (filter) {
+                                  setState(() => _dateFilter = filter);
+                                },
+                                onCategoryChanged: (category) {
+                                  setState(
+                                    () =>
+                                        _categoryFilter = category ?? 'Tất cả',
+                                  );
+                                },
+                              ),
+                              Expanded(
+                                child: groups.isEmpty
+                                    ? const _EmptyTransactions()
+                                    : ListView(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          16,
+                                          8,
+                                          16,
+                                          96,
+                                        ),
+                                        children: [
+                                          for (final group in groups) ...[
+                                            _TransactionGroupSection(
+                                              group: group,
+                                              onTransactionTap: _openDetail,
+                                            ),
+                                            const SizedBox(height: 20),
+                                          ],
+                                        ],
+                                      ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ],
                 );
@@ -451,10 +483,10 @@ class _EmptyTransactions extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 32,
               backgroundColor: AppColors.surfaceContainerHigh,
-              child: Icon(Icons.receipt_long_outlined),
+              child: const Icon(Icons.receipt_long_outlined),
             ),
             const SizedBox(height: 16),
             Text('Chưa có giao dịch phù hợp', style: AppTextStyles.titleMedium),
@@ -482,24 +514,24 @@ class _TransactionsBottomNavBar extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        decoration: const BoxDecoration(color: AppColors.surface),
+        decoration: BoxDecoration(color: AppColors.surface),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _NavItem(
-              label: 'Home',
+              label: 'Trang chủ',
               icon: Icons.home_outlined,
               onTap: () {
                 Navigator.of(context).pushReplacementNamed(AppRoutes.home);
               },
             ),
             const _NavItem(
-              label: 'Transactions',
-              icon: Icons.receipt_long_rounded,
+              label: 'Giao dịch',
+              icon: Icons.receipt_rounded,
               selected: true,
             ),
             _NavItem(
-              label: 'Statistics',
+              label: 'Thống kê',
               icon: Icons.leaderboard_outlined,
               onTap: () {
                 Navigator.of(
@@ -508,7 +540,7 @@ class _TransactionsBottomNavBar extends StatelessWidget {
               },
             ),
             _NavItem(
-              label: 'Profile',
+              label: 'Cá nhân',
               icon: Icons.person_outline_rounded,
               onTap: () {
                 Navigator.of(context).pushReplacementNamed(AppRoutes.profile);

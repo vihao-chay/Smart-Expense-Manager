@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_routes.dart';
@@ -5,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_formatters.dart';
 import '../../core/utils/category_catalog.dart';
+import '../../core/widgets/app_top_bar.dart';
 import '../../data/models/app_transaction.dart';
 import '../../data/models/app_user_profile.dart';
 import '../../data/repositories/firebase_auth_error_mapper.dart';
@@ -21,20 +24,6 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.surface,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.of(context).pushNamed(
-            AppRoutes.addTransaction,
-            arguments: const AddTransactionArgs(
-              initialType: AddTransactionType.expense,
-            ),
-          );
-        },
-        backgroundColor: AppColors.primaryContainer,
-        foregroundColor: AppColors.onPrimaryContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: const Icon(Icons.add_rounded, size: 28),
-      ),
       bottomNavigationBar: const _BottomNavBar(),
       body: SafeArea(
         child: Center(
@@ -46,7 +35,7 @@ class HomeScreen extends StatelessWidget {
                 final profile = profileSnapshot.data;
                 return Column(
                   children: [
-                    _HomeTopBar(profile: profile),
+                    AppTopBar(profile: profile),
                     Expanded(
                       child: StreamBuilder<List<AppTransaction>>(
                         stream: repository.watchTransactions(),
@@ -77,61 +66,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _HomeTopBar extends StatelessWidget {
-  const _HomeTopBar({required this.profile});
-
-  final AppUserProfile? profile;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = profile?.fullName.trim().isNotEmpty == true
-        ? profile!.fullName.trim()
-        : 'Bạn';
-
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.surfaceContainerHigh,
-            backgroundImage: profile?.avatarUrl == null
-                ? null
-                : NetworkImage(profile!.avatarUrl!),
-            child: profile?.avatarUrl == null
-                ? const Icon(Icons.person_rounded)
-                : null,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Xin chào,', style: AppTextStyles.labelMedium),
-                Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleMedium,
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Thông báo',
-            onPressed: () {
-              Navigator.of(context).pushNamed(AppRoutes.notifications);
-            },
-            icon: const Icon(Icons.notifications_none_rounded),
-            color: AppColors.onSurfaceVariant,
-          ),
-        ],
       ),
     );
   }
@@ -294,41 +228,52 @@ class _QuickActions extends StatelessWidget {
       );
     }
 
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 0.82,
-      children: [
-        _QuickActionButton(
-          label: 'Thêm thu',
-          icon: Icons.add_circle_outline_rounded,
-          color: AppColors.secondary,
-          onTap: () => openAddTransaction(AddTransactionType.income),
-        ),
-        _QuickActionButton(
-          label: 'Thêm chi',
-          icon: Icons.remove_circle_outline_rounded,
-          color: AppColors.error,
-          onTap: () => openAddTransaction(AddTransactionType.expense),
-        ),
-        _QuickActionButton(
-          label: 'Đổi tiền',
-          icon: Icons.currency_exchange_rounded,
-          color: AppColors.primary,
-          onTap: () =>
-              Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
-        ),
-        _QuickActionButton(
-          label: 'Ngân sách',
-          icon: Icons.pie_chart_outline_rounded,
-          color: AppColors.tertiary,
-          onTap: () =>
-              Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GridView.count(
+          crossAxisCount: constraints.maxWidth >= 520 ? 5 : 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 0.82,
+          children: [
+            _QuickActionButton(
+              label: 'Thêm thu',
+              icon: Icons.add_circle_outline_rounded,
+              color: AppColors.secondary,
+              onTap: () => openAddTransaction(AddTransactionType.income),
+            ),
+            _QuickActionButton(
+              label: 'Thêm chi',
+              icon: Icons.remove_circle_outline_rounded,
+              color: AppColors.error,
+              onTap: () => openAddTransaction(AddTransactionType.expense),
+            ),
+            _QuickActionButton(
+              label: 'Đổi tiền',
+              icon: Icons.currency_exchange_rounded,
+              color: AppColors.primary,
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
+            ),
+            _QuickActionButton(
+              label: 'Ngân sách',
+              icon: Icons.pie_chart_outline_rounded,
+              color: AppColors.tertiary,
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
+            ),
+            _QuickActionButton(
+              label: 'AI',
+              icon: Icons.auto_awesome_rounded,
+              color: const Color(0xFF7C3AED),
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.aiInsights),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -399,6 +344,8 @@ class _MiniStatistics extends StatelessWidget {
       (max, item) =>
           [max, item.income, item.expense].reduce((a, b) => a > b ? a : b),
     );
+    final axisMaxValue = _niceChartMax(maxValue);
+    final yTicks = _buildChartTicks(axisMaxValue);
 
     return _SoftCard(
       child: Column(
@@ -422,18 +369,188 @@ class _MiniStatistics extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 150,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (final day in days)
-                  Expanded(
-                    child: _ChartColumn(day: day, maxValue: maxValue),
-                  ),
-              ],
+            height: 172,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const axisWidth = 34.0;
+                const axisGap = 6.0;
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: axisWidth,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 26),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (final tick in yTicks.reversed)
+                              Text(
+                                _formatChartAxisValue(tick),
+                                style: AppTextStyles.labelMedium.copyWith(
+                                  fontSize: 9,
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: axisGap),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                top: 4,
+                                bottom: 26,
+                              ),
+                              child: Column(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  for (final _ in yTicks)
+                                    Container(
+                                      height: 1,
+                                      color: AppColors.outlineVariant
+                                          .withValues(alpha: 0.45),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 4,
+                            bottom: 26,
+                            child: Container(
+                              width: 1.2,
+                              color: AppColors.outlineVariant,
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 26,
+                            child: Container(
+                              height: 1.2,
+                              color: AppColors.outlineVariant,
+                            ),
+                          ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              for (final day in days)
+                                Expanded(
+                                  child: _ChartColumn(
+                                    day: day,
+                                    maxValue: axisMaxValue,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _MiniLegendItem(color: AppColors.secondary, label: 'Thu nhập'),
+              const SizedBox(width: 14),
+              _MiniLegendItem(color: AppColors.error, label: 'Chi tiêu'),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _AxisHint(
+                label: 'Trục X: ngày',
+                icon: Icons.calendar_today_rounded,
+              ),
+              const SizedBox(width: 8),
+              _AxisHint(label: 'Trục Y: VND', icon: Icons.payments_outlined),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _MiniLegendItem extends StatelessWidget {
+  const _MiniLegendItem({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: AppTextStyles.labelMedium.copyWith(
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AxisHint extends StatelessWidget {
+  const _AxisHint({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: AppColors.primary),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.primary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -577,9 +694,13 @@ class _ChartColumn extends StatelessWidget {
     final incomeFactor = day.income == 0 ? 0.02 : day.income / maxValue;
     final expenseFactor = day.expense == 0 ? 0.02 : day.expense / maxValue;
 
-    return Column(
+    return Stack(
       children: [
-        Expanded(
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 4,
+          bottom: 26,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -589,9 +710,9 @@ class _ChartColumn extends StatelessWidget {
                 alignment: Alignment.bottomCenter,
                 child: Container(
                   width: 10,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.secondary,
-                    borderRadius: BorderRadius.vertical(
+                    borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
                   ),
@@ -603,9 +724,9 @@ class _ChartColumn extends StatelessWidget {
                 alignment: Alignment.bottomCenter,
                 child: Container(
                   width: 10,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.error,
-                    borderRadius: BorderRadius.vertical(
+                    borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
                   ),
@@ -614,10 +735,15 @@ class _ChartColumn extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          '${day.date.day}/${day.date.month}',
-          style: AppTextStyles.labelMedium.copyWith(fontSize: 10),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Text(
+            '${day.date.day}/${day.date.month}',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.labelMedium.copyWith(fontSize: 10),
+          ),
         ),
       ],
     );
@@ -638,26 +764,26 @@ class _BottomNavBar extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             const _NavItem(
-              label: 'Home',
+              label: 'Trang chủ',
               icon: Icons.home_rounded,
               selected: true,
             ),
             _NavItem(
-              label: 'Transactions',
+              label: 'Giao dịch',
               icon: Icons.receipt_long_outlined,
               onTap: () {
                 Navigator.of(context).pushNamed(AppRoutes.transactions);
               },
             ),
             _NavItem(
-              label: 'Statistics',
+              label: 'Thống kê',
               icon: Icons.leaderboard_outlined,
               onTap: () {
                 Navigator.of(context).pushNamed(AppRoutes.statistics);
               },
             ),
             _NavItem(
-              label: 'Profile',
+              label: 'Cá nhân',
               icon: Icons.person_outline_rounded,
               onTap: () {
                 Navigator.of(context).pushNamed(AppRoutes.profile);
@@ -750,6 +876,43 @@ class _ChartDay {
   final DateTime date;
   final int income;
   final int expense;
+}
+
+int _niceChartMax(int value) {
+  if (value <= 0) return 1;
+  final exponent = math.pow(10, value.toString().length - 1).toInt();
+  final normalized = value / exponent;
+  final nice = normalized <= 1
+      ? 1
+      : normalized <= 2
+      ? 2
+      : normalized <= 5
+      ? 5
+      : 10;
+  return nice * exponent;
+}
+
+List<num> _buildChartTicks(int maxValue) {
+  return List.generate(5, (index) => maxValue * index / 4);
+}
+
+String _formatChartAxisValue(num value) {
+  final rounded = value.round();
+  final absolute = rounded.abs();
+  if (absolute >= 1000000000) {
+    return '${_trimChartNumber(rounded / 1000000000)}B';
+  }
+  if (absolute >= 1000000) {
+    return '${_trimChartNumber(rounded / 1000000)}M';
+  }
+  if (absolute >= 1000) return '${_trimChartNumber(rounded / 1000)}K';
+  return rounded.toString();
+}
+
+String _trimChartNumber(num value) {
+  final rounded = (value * 10).round() / 10;
+  if (rounded == rounded.roundToDouble()) return rounded.toInt().toString();
+  return rounded.toStringAsFixed(1);
 }
 
 bool _sameDay(DateTime left, DateTime right) {
