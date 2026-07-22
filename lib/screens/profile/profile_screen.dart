@@ -63,6 +63,26 @@ class ProfileScreen extends StatelessWidget {
                                   ).pushNamed(AppRoutes.settings);
                                 },
                               ),
+                              _MenuTile(
+                                icon: Icons.picture_as_pdf_outlined,
+                                title: 'Tài liệu PDF',
+                                subtitle: 'Xem báo cáo PDF đã xuất',
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed(AppRoutes.documents);
+                                },
+                              ),
+                              _MenuTile(
+                                icon: Icons.bug_report_outlined,
+                                title: 'Báo cáo lỗi',
+                                subtitle: 'Gửi lỗi app cho admin xử lý',
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed(AppRoutes.bugReport);
+                                },
+                              ),
                               const SizedBox(height: 12),
                               const _LogoutButton(),
                             ],

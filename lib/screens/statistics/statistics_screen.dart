@@ -1,6 +1,10 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
@@ -12,6 +16,7 @@ import '../../data/models/app_transaction.dart';
 import '../../data/models/app_user_profile.dart';
 import '../../data/repositories/firebase_auth_error_mapper.dart';
 import '../../data/repositories/firestore_repository.dart';
+import '../../data/repositories/storage_repository.dart';
 import '../transactions/transactions_screen.dart';
 
 enum _Period { week, month, year }
@@ -25,8 +30,10 @@ class StatisticsScreen extends StatefulWidget {
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
   final _repository = FirestoreRepository();
+  final _storageRepository = StorageRepository();
   var _selectedPeriod = _Period.month;
   var _anchorDate = DateTime.now();
+  var _isExportingPdf = false;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +79,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                           final stats = _Stats.fromTransactions(transactions);
                           final bars = _buildBars(transactions);
                           final categories = _buildCategoryStats(transactions);
+                          final profile = snapshot.data;
 
                           return ListView(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -88,6 +96,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                 onNext: () => setState(() {
                                   _anchorDate = _shiftAnchor(1);
                                 }),
+                              ),
+                              const SizedBox(height: 12),
+                              _ExportPdfButton(
+                                isLoading: _isExportingPdf,
+                                onPressed: () => _exportPdfReport(
+                                  profile: profile,
+                                  transactions: transactions,
+                                  stats: stats,
+                                  bars: bars,
+                                  categories: categories,
+                                ),
                               ),
                               const SizedBox(height: 24),
                               _SummaryGrid(stats: stats),
@@ -220,6 +239,117 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         amount: entry.value,
       );
     }).toList();
+  }
+
+  Future<void> _exportPdfReport({
+    required AppUserProfile? profile,
+    required List<AppTransaction> transactions,
+    required _Stats stats,
+    required List<_BarPoint> bars,
+    required List<_CategoryStat> categories,
+  }) async {
+    if (_isExportingPdf) return;
+    setState(() => _isExportingPdf = true);
+
+    try {
+      final fileName = _pdfFileName;
+      final periodLabel = _pdfPeriodLabel;
+      final bytes = await _buildStatisticsPdf(
+        profile: profile,
+        periodLabel: periodLabel,
+        transactions: transactions,
+        stats: stats,
+        bars: bars,
+        categories: categories,
+      );
+
+      final uploadResult = await _storageRepository.uploadReportPdf(
+        bytes: bytes,
+        fileName: fileName,
+        fullName: profile?.fullName ?? '',
+      );
+
+      await _repository.createStatisticsReportDocument(
+        title: 'Báo cáo thống kê $periodLabel',
+        description:
+            'Báo cáo được xuất từ trang Thống kê trên mobile Smart Expense.',
+        fileName: fileName,
+        fileUrl: uploadResult.downloadUrl,
+        storagePath: uploadResult.storagePath,
+        periodLabel: periodLabel,
+        profile: profile,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã xuất PDF lên Firebase. Web admin có thể quản lý.'),
+        ),
+      );
+
+      try {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: fileName,
+          subject: 'Bao cao thong ke Smart Expense',
+          body: 'Bao cao thong ke tai chinh ca nhan tu Smart Expense.',
+        );
+      } catch (shareError) {
+        debugPrint('Cannot open PDF share sheet: $shareError');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Export statistics PDF failed: $error\n$stackTrace');
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_pdfExportErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _isExportingPdf = false);
+    }
+  }
+
+  String get _pdfPeriodLabel {
+    return switch (_selectedPeriod) {
+      _Period.week => _pdfWeekLabel(_anchorDate),
+      _Period.month => 'Thang ${_anchorDate.month}/${_anchorDate.year}',
+      _Period.year => 'Nam ${_anchorDate.year}',
+    };
+  }
+
+  String get _pdfFileName {
+    final period = switch (_selectedPeriod) {
+      _Period.week =>
+        'tuan_${_startOfWeek(_anchorDate).millisecondsSinceEpoch}',
+      _Period.month =>
+        '${_anchorDate.year}_${_anchorDate.month.toString().padLeft(2, '0')}',
+      _Period.year => '${_anchorDate.year}',
+    };
+    return 'smart_expense_report_${period}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+  }
+}
+
+class _ExportPdfButton extends StatelessWidget {
+  const _ExportPdfButton({required this.isLoading, required this.onPressed});
+
+  final bool isLoading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 46,
+      child: FilledButton.icon(
+        onPressed: isLoading ? null : onPressed,
+        icon: isLoading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.picture_as_pdf_rounded),
+        label: Text(isLoading ? 'Đang tạo PDF...' : 'Xuất PDF thống kê'),
+      ),
+    );
   }
 }
 
@@ -1399,6 +1529,208 @@ class _LineChartPainter extends CustomPainter {
   }
 }
 
+Future<Uint8List> _buildStatisticsPdf({
+  required AppUserProfile? profile,
+  required String periodLabel,
+  required List<AppTransaction> transactions,
+  required _Stats stats,
+  required List<_BarPoint> bars,
+  required List<_CategoryStat> categories,
+}) async {
+  final pdf = pw.Document(
+    title: 'Smart Expense Statistics Report',
+    author: 'Smart Expense Manager',
+  );
+  final recentTransactions = [...transactions]
+    ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(28),
+      footer: (context) {
+        return pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${context.pageNumber}/${context.pagesCount}',
+            style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          ),
+        );
+      },
+      build: (context) {
+        return [
+          pw.Text(
+            'SMART EXPENSE MANAGER',
+            style: pw.TextStyle(
+              color: PdfColors.teal800,
+              fontSize: 12,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Bao cao thong ke tai chinh',
+            style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Ky thong ke: $periodLabel',
+            style: const pw.TextStyle(fontSize: 12),
+          ),
+          pw.Text(
+            'Nguoi dung: ${_safePdfText(profile?.fullName ?? 'Nguoi dung')}'
+            '${profile?.email.trim().isNotEmpty == true ? ' - ${profile!.email}' : ''}',
+            style: const pw.TextStyle(fontSize: 12),
+          ),
+          pw.Text(
+            'Ngay xuat: ${_formatPdfDate(DateTime.now())}',
+            style: const pw.TextStyle(fontSize: 12),
+          ),
+          pw.SizedBox(height: 18),
+          pw.Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _pdfMetric('Tong thu', _formatPdfVnd(stats.income)),
+              _pdfMetric('Tong chi', _formatPdfVnd(stats.expense)),
+              _pdfMetric('So du', _formatPdfVnd(stats.savings)),
+              _pdfMetric(
+                'Ty le tiet kiem',
+                '${stats.savingsRate.toStringAsFixed(1)}%',
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 22),
+          _pdfSectionTitle('Thu chi theo ky'),
+          _pdfTable(
+            headers: const ['Moc', 'Thu', 'Chi', 'So du'],
+            rows: bars
+                .map(
+                  (item) => [
+                    _safePdfText(item.label),
+                    _formatPdfVnd(item.income),
+                    _formatPdfVnd(item.expense),
+                    _formatPdfVnd(item.balance),
+                  ],
+                )
+                .toList(),
+            emptyText: 'Khong co du lieu thu chi.',
+          ),
+          pw.SizedBox(height: 18),
+          _pdfSectionTitle('Top danh muc chi tieu'),
+          _pdfTable(
+            headers: const ['Danh muc', 'So tien', 'Ty trong'],
+            rows: categories
+                .map(
+                  (item) => [
+                    _safePdfText(item.meta.label),
+                    _formatPdfVnd(item.amount),
+                    _percentText(item.amount, stats.expense),
+                  ],
+                )
+                .toList(),
+            emptyText: 'Khong co du lieu chi tieu.',
+          ),
+          pw.SizedBox(height: 18),
+          _pdfSectionTitle('Giao dich gan nhat'),
+          _pdfTable(
+            headers: const ['Ngay', 'Loai', 'Danh muc', 'Tieu de', 'So tien'],
+            rows: recentTransactions
+                .take(12)
+                .map(
+                  (item) => [
+                    _formatPdfDate(item.transactionDate),
+                    item.type == AppTransactionType.income ? 'Thu' : 'Chi',
+                    _safePdfText(item.category),
+                    _safePdfText(item.title ?? item.note ?? '-'),
+                    _formatPdfVnd(
+                      item.type == AppTransactionType.income
+                          ? item.amount
+                          : -item.amount,
+                    ),
+                  ],
+                )
+                .toList(),
+            emptyText: 'Khong co giao dich trong ky nay.',
+          ),
+        ];
+      },
+    ),
+  );
+
+  return pdf.save();
+}
+
+pw.Widget _pdfMetric(String label, String value) {
+  return pw.Container(
+    width: 126,
+    padding: const pw.EdgeInsets.all(10),
+    decoration: pw.BoxDecoration(
+      color: PdfColors.teal50,
+      border: pw.Border.all(color: PdfColors.teal100),
+      borderRadius: pw.BorderRadius.circular(8),
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+        ),
+        pw.SizedBox(height: 5),
+        pw.Text(
+          value,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+      ],
+    ),
+  );
+}
+
+pw.Widget _pdfSectionTitle(String title) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.only(bottom: 8),
+    child: pw.Text(
+      title,
+      style: pw.TextStyle(
+        color: PdfColors.teal800,
+        fontSize: 15,
+        fontWeight: pw.FontWeight.bold,
+      ),
+    ),
+  );
+}
+
+pw.Widget _pdfTable({
+  required List<String> headers,
+  required List<List<String>> rows,
+  required String emptyText,
+}) {
+  if (rows.isEmpty) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Text(emptyText, style: const pw.TextStyle(fontSize: 11)),
+    );
+  }
+
+  return pw.TableHelper.fromTextArray(
+    headers: headers,
+    data: rows,
+    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+    headerDecoration: const pw.BoxDecoration(color: PdfColors.teal100),
+    headerStyle: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+    cellStyle: const pw.TextStyle(fontSize: 9),
+    cellAlignment: pw.Alignment.centerLeft,
+    headerAlignment: pw.Alignment.centerLeft,
+    cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+  );
+}
+
 class _Stats {
   const _Stats({required this.income, required this.expense});
 
@@ -1472,6 +1804,138 @@ String _weekLabel(DateTime date) {
   final start = _startOfWeek(date);
   final end = start.add(const Duration(days: 6));
   return '${start.day}/${start.month} - ${end.day}/${end.month}, ${end.year}';
+}
+
+String _pdfWeekLabel(DateTime date) {
+  final start = _startOfWeek(date);
+  final end = start.add(const Duration(days: 6));
+  return 'Tuan ${_formatPdfDate(start)} - ${_formatPdfDate(end)}';
+}
+
+String _formatPdfDate(DateTime date) {
+  return '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
+}
+
+String _formatPdfVnd(num value) {
+  final rounded = value.round();
+  final sign = rounded < 0 ? '-' : '';
+  final digits = rounded.abs().toString();
+  final buffer = StringBuffer();
+
+  for (var index = 0; index < digits.length; index++) {
+    final positionFromEnd = digits.length - index;
+    buffer.write(digits[index]);
+    if (positionFromEnd > 1 && positionFromEnd % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+
+  return '$sign${buffer.toString()} VND';
+}
+
+String _pdfExportErrorMessage(Object error) {
+  final details = error.toString();
+  if (details.contains('permission-denied') ||
+      details.contains('unauthorized')) {
+    return 'Firebase Rules đang chặn xuất PDF. Hãy deploy firestore.rules và storage.rules mới.';
+  }
+  if (details.contains('MissingPluginException')) {
+    return 'Bạn cần dừng app rồi chạy lại flutter run sau khi thêm package PDF.';
+  }
+
+  final mapped = firebaseAuthErrorMessage(error);
+  if (mapped.contains('Đã có lỗi')) {
+    return 'Không xuất được PDF. Vui lòng thử lại sau.';
+  }
+  return mapped;
+}
+
+String _safePdfText(String value) {
+  final replacements = <String, String>{
+    'à': 'a',
+    'á': 'a',
+    'ả': 'a',
+    'ã': 'a',
+    'ạ': 'a',
+    'ă': 'a',
+    'ằ': 'a',
+    'ắ': 'a',
+    'ẳ': 'a',
+    'ẵ': 'a',
+    'ặ': 'a',
+    'â': 'a',
+    'ầ': 'a',
+    'ấ': 'a',
+    'ẩ': 'a',
+    'ẫ': 'a',
+    'ậ': 'a',
+    'è': 'e',
+    'é': 'e',
+    'ẻ': 'e',
+    'ẽ': 'e',
+    'ẹ': 'e',
+    'ê': 'e',
+    'ề': 'e',
+    'ế': 'e',
+    'ể': 'e',
+    'ễ': 'e',
+    'ệ': 'e',
+    'ì': 'i',
+    'í': 'i',
+    'ỉ': 'i',
+    'ĩ': 'i',
+    'ị': 'i',
+    'ò': 'o',
+    'ó': 'o',
+    'ỏ': 'o',
+    'õ': 'o',
+    'ọ': 'o',
+    'ô': 'o',
+    'ồ': 'o',
+    'ố': 'o',
+    'ổ': 'o',
+    'ỗ': 'o',
+    'ộ': 'o',
+    'ơ': 'o',
+    'ờ': 'o',
+    'ớ': 'o',
+    'ở': 'o',
+    'ỡ': 'o',
+    'ợ': 'o',
+    'ù': 'u',
+    'ú': 'u',
+    'ủ': 'u',
+    'ũ': 'u',
+    'ụ': 'u',
+    'ư': 'u',
+    'ừ': 'u',
+    'ứ': 'u',
+    'ử': 'u',
+    'ữ': 'u',
+    'ự': 'u',
+    'ỳ': 'y',
+    'ý': 'y',
+    'ỷ': 'y',
+    'ỹ': 'y',
+    'ỵ': 'y',
+    'đ': 'd',
+  };
+
+  final buffer = StringBuffer();
+  for (final rune in value.runes) {
+    final char = String.fromCharCode(rune);
+    final lower = char.toLowerCase();
+    final replacement = replacements[lower];
+    if (replacement == null) {
+      buffer.write(char.codeUnitAt(0) < 128 ? char : '');
+    } else if (char == lower) {
+      buffer.write(replacement);
+    } else {
+      buffer.write(replacement.toUpperCase());
+    }
+  }
+  return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 int _niceChartMax(int value) {

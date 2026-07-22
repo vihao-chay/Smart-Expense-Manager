@@ -5,6 +5,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../data/models/user_settings.dart';
 import '../../data/repositories/firebase_auth_error_mapper.dart';
 import '../../data/repositories/firestore_repository.dart';
+import '../../data/services/notification_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -20,6 +21,7 @@ class SettingsScreen extends StatelessWidget {
       try {
         await repository.saveSettings(settings);
         if (checkDailyReminder) {
+          await NotificationService.instance.refreshDeviceToken();
           await repository.createDailyReminderIfNeeded(settings);
         }
       } catch (error) {

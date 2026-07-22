@@ -35,6 +35,34 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']);
     }
 
+    function isMobileStatisticsReportDocument() {
+      return signedIn()
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'description',
+          'category',
+          'fileName',
+          'fileUrl',
+          'storagePath',
+          'isPublished',
+          'source',
+          'uploadedBy',
+          'userId',
+          'userEmail',
+          'userName',
+          'periodLabel',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.uploadedBy == request.auth.uid
+        && request.resource.data.source == 'mobile_statistics_export'
+        && request.resource.data.category == 'Báo cáo thống kê'
+        && request.resource.data.isPublished == false
+        && request.resource.data.fileName.matches('smart_expense_report_[a-zA-Z0-9_-]+\\.pdf')
+        && request.resource.data.storagePath.matches('report_exports/' + request.auth.uid + '/smart_expense_report_[a-zA-Z0-9_-]+\\.pdf');
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) && ownerSafeCreate()) || isAdmin();
@@ -57,6 +85,36 @@ service cloud.firestore {
 
     match /{path=**}/notifications/{notificationId} {
       allow read: if isAdmin();
+    }
+
+    match /{path=**}/recipients/{recipientId} {
+      allow read: if isAdmin();
+    }
+
+    match /documents/{documentId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.isPublished == true)
+        || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || isMobileStatisticsReportDocument();
+      allow update, delete: if isAdmin();
+    }
+
+    match /bugReports/{bugId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    match /notificationCampaigns/{campaignId} {
+      allow read, write: if isAdmin();
+
+      match /recipients/{userId} {
+        allow read: if isAdmin() || isOwner(userId);
+        allow create, update: if isAdmin() || isOwner(userId);
+        allow delete: if isAdmin();
+      }
     }
   }
 }
