@@ -21,16 +21,93 @@ class _AiInsightsScreenState extends State<AiInsightsScreen> {
   final _repository = FirestoreRepository();
   final _aiService = GeminiAiService();
 
-  Future<String>? _insightsFuture;
+  Future<_InsightResult>? _insightsFuture;
 
   void _generateInsights(
     List<AppTransaction> transactions,
     List<AppBudget> budgets,
   ) {
     final prompt = _buildExpensePrompt(transactions, budgets);
+    final fallback = _buildLocalInsight(transactions, budgets);
+    final primaryPrompt = _buildRewritePrompt(
+      baseline: fallback,
+      originalPrompt: prompt,
+    );
+    final retryPrompt = _buildRewritePrompt(
+      baseline: fallback,
+      originalPrompt: _buildExpensePrompt(transactions, budgets, strict: true),
+      strict: true,
+    );
     setState(() {
-      _insightsFuture = _aiService.generateExpenseInsights(prompt);
+      _insightsFuture = _generateGeminiFirst(
+        prompt: primaryPrompt,
+        retryPrompt: retryPrompt,
+        fallback: fallback,
+      );
     });
+  }
+
+  Future<_InsightResult> _generateGeminiFirst({
+    required String prompt,
+    required String retryPrompt,
+    required String fallback,
+  }) async {
+    String? firstText;
+    String? retryText;
+    try {
+      firstText = await _aiService.generateExpenseInsights(
+        prompt,
+        maxOutputTokens: 2200,
+      );
+      if (_usefulAiText(firstText, fallback: fallback)) {
+        return _InsightResult(
+          text: firstText.trim(),
+          source: _InsightSource.gemini,
+        );
+      }
+    } catch (_) {
+      return _InsightResult(text: fallback, source: _InsightSource.fallback);
+    }
+
+    try {
+      retryText = await _aiService.generateExpenseInsights(
+        retryPrompt,
+        maxOutputTokens: 2800,
+      );
+      if (_usefulAiText(retryText, fallback: fallback)) {
+        return _InsightResult(
+          text: retryText.trim(),
+          source: _InsightSource.gemini,
+        );
+      }
+    } catch (_) {
+      if (firstText.trim().isNotEmpty) {
+        return _InsightResult(
+          text: firstText.trim(),
+          source: _InsightSource.gemini,
+        );
+      }
+    }
+
+    final shortText = retryText?.trim().isNotEmpty == true
+        ? retryText!.trim()
+        : firstText.trim();
+    if (shortText.isNotEmpty) {
+      try {
+        final expandedText = await _aiService.generateExpenseInsights(
+          _buildExpandPrompt(retryPrompt, shortText, fallback),
+          maxOutputTokens: 3200,
+        );
+        if (_usefulAiText(expandedText, fallback: fallback)) {
+          return _InsightResult(
+            text: expandedText.trim(),
+            source: _InsightSource.gemini,
+          );
+        }
+      } catch (_) {}
+    }
+
+    return _InsightResult(text: fallback, source: _InsightSource.fallback);
   }
 
   @override
@@ -120,7 +197,7 @@ class _AiInsightsBody extends StatelessWidget {
 
   final List<AppTransaction> transactions;
   final List<AppBudget> budgets;
-  final Future<String>? insightsFuture;
+  final Future<_InsightResult>? insightsFuture;
   final VoidCallback onGenerate;
 
   @override
@@ -459,11 +536,11 @@ class _GenerateCard extends StatelessWidget {
 class _InsightResultCard extends StatelessWidget {
   const _InsightResultCard({required this.future});
 
-  final Future<String> future;
+  final Future<_InsightResult> future;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<String>(
+    return FutureBuilder<_InsightResult>(
       future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -495,6 +572,9 @@ class _InsightResultCard extends StatelessWidget {
           );
         }
 
+        final result = snapshot.data;
+        if (result == null) return const SizedBox.shrink();
+
         return _SoftCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,18 +583,62 @@ class _InsightResultCard extends StatelessWidget {
                 children: [
                   Icon(Icons.psychology_alt_rounded, color: AppColors.primary),
                   const SizedBox(width: 8),
-                  Text('Kết quả AI', style: AppTextStyles.titleMedium),
+                  Expanded(
+                    child: Text(
+                      result.source == _InsightSource.gemini
+                          ? 'Kết quả AI Gemini'
+                          : 'Phân tích tự động',
+                      style: AppTextStyles.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _InsightSourceBadge(source: result.source),
                 ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                result.source == _InsightSource.gemini
+                    ? 'Gemini phân tích dữ liệu thu chi từ Firestore.'
+                    : 'App tự phân tích dự phòng vì Gemini trả lời quá ngắn.',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 12),
               SelectableText(
-                snapshot.data ?? '',
+                result.text,
                 style: AppTextStyles.bodyMedium.copyWith(height: 1.55),
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _InsightSourceBadge extends StatelessWidget {
+  const _InsightSourceBadge({required this.source});
+
+  final _InsightSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final isGemini = source == _InsightSource.gemini;
+    final color = isGemini ? AppColors.primary : AppColors.tertiary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        isGemini ? 'Gemini' : 'Dự phòng',
+        style: AppTextStyles.labelMedium.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -575,6 +699,15 @@ class _CategoryTotal {
   final CategoryMeta meta;
 }
 
+class _InsightResult {
+  const _InsightResult({required this.text, required this.source});
+
+  final String text;
+  final _InsightSource source;
+}
+
+enum _InsightSource { gemini, fallback }
+
 int _sumByType(List<AppTransaction> transactions, AppTransactionType type) {
   return transactions
       .where((transaction) => transaction.type == type)
@@ -627,8 +760,9 @@ Map<String, int> _monthlyExpenseByCategory(
 
 String _buildExpensePrompt(
   List<AppTransaction> transactions,
-  List<AppBudget> budgets,
-) {
+  List<AppBudget> budgets, {
+  bool strict = false,
+}) {
   final sortedTransactions = [...transactions]
     ..sort(
       (left, right) => right.transactionDate.compareTo(left.transactionDate),
@@ -642,17 +776,30 @@ String _buildExpensePrompt(
   final currentBudgets = budgets
       .where((budget) => budget.periodKey == currentMonthKey)
       .toList();
+  final strictInstruction = strict
+      ? '''
+
+Lần trả lời trước quá ngắn. Lần này bắt buộc phải phân tích đầy đủ theo đúng dữ liệu, không viết lời chào, không viết phần mở bài.
+Trả lời tối thiểu 350 từ, gồm 6 đến 8 gạch đầu dòng. Mỗi gạch đầu dòng phải có 2 câu: câu 1 nêu nhận xét có số liệu, câu 2 nêu hành động cụ thể.
+'''
+      : '';
 
   return '''
 Bạn là trợ lý tài chính cá nhân cho sinh viên Việt Nam.
 Hãy phân tích dữ liệu thu chi dưới đây và trả lời bằng tiếng Việt.
+$strictInstruction
 
-Yêu cầu:
+Bắt buộc:
+- Không được chỉ chào hỏi hoặc giới thiệu bản thân.
+- Bắt đầu ngay bằng dòng "- Tổng quan:".
+- Trả lời 6 đến 8 gạch đầu dòng, mỗi dòng phải bắt đầu bằng "- ".
+- Mỗi gạch đầu dòng phải có 2 câu, dài vừa đủ, có số liệu cụ thể từ dữ liệu bên dưới.
+- Tổng câu trả lời tối thiểu 350 từ hoặc khoảng 1800 ký tự.
+- Không dừng ở phần tổng quan; phải có đủ phần ngân sách, danh mục chi nhiều, tỷ lệ tiết kiệm và việc nên làm.
 - Không bịa số liệu ngoài dữ liệu được cung cấp.
-- Viết ngắn gọn, dễ hiểu, dùng gạch đầu dòng.
-- Nêu 4 đến 6 nhận xét/gợi ý cụ thể.
 - Nếu dữ liệu còn ít, hãy nói rõ cần thêm dữ liệu để phân tích chính xác hơn.
 - Không đưa lời khuyên đầu tư rủi ro.
+- Kết thúc bằng 1 việc nên làm tiếp theo trong tuần này.
 
 Tổng quan:
 - Số giao dịch: ${transactions.length}
@@ -669,6 +816,154 @@ ${_budgetLines(currentBudgets, monthlySpent)}
 Giao dịch gần đây:
 ${_transactionLines(sortedTransactions.take(20))}
 ''';
+}
+
+String _buildRewritePrompt({
+  required String baseline,
+  required String originalPrompt,
+  bool strict = false,
+}) {
+  final strictText = strict
+      ? 'Bản trả lời trước quá ngắn. Lần này phải viết dài hơn bản phân tích chuẩn, không được rút gọn.'
+      : 'Hãy viết lại bản phân tích chuẩn bên dưới cho tự nhiên hơn nhưng không được ngắn hơn.';
+
+  return '''
+$strictText
+
+Bản phân tích chuẩn do app đã tính đúng từ Firestore:
+$baseline
+
+Yêu cầu với câu trả lời Gemini:
+- Giữ toàn bộ ý chính và toàn bộ số liệu quan trọng từ bản phân tích chuẩn.
+- Có thể diễn đạt tự nhiên hơn và thêm 1-2 gợi ý hợp lý dựa trên dữ liệu gốc.
+- Không được chỉ viết tổng quan một dòng.
+- Không được ngắn hơn bản phân tích chuẩn.
+- Trả lời 6 đến 8 gạch đầu dòng, mỗi gạch đầu dòng có 2 câu.
+- Nếu dữ liệu ít, vẫn phải giải thích rõ dữ liệu ít ảnh hưởng thế nào đến độ chính xác.
+
+Dữ liệu gốc để đối chiếu:
+$originalPrompt
+''';
+}
+
+String _buildExpandPrompt(
+  String originalPrompt,
+  String shortAnswer,
+  String baseline,
+) {
+  return '''
+Câu trả lời Gemini trước đó quá ngắn:
+$shortAnswer
+
+Hãy viết lại câu trả lời dài hơn và cụ thể hơn dựa trên bản phân tích chuẩn và dữ liệu gốc dưới đây.
+
+Bản phân tích chuẩn, không được viết ngắn hơn bản này:
+$baseline
+
+Bắt buộc:
+- Chỉ trả lời bằng tiếng Việt.
+- Trả lời 6 đến 8 gạch đầu dòng.
+- Mỗi gạch đầu dòng có 2 câu: câu 1 phân tích với số liệu, câu 2 đề xuất hành động.
+- Tổng câu trả lời tối thiểu 350 từ hoặc khoảng 1800 ký tự.
+- Không chào hỏi, không xin lỗi, không giới thiệu bản thân.
+- Không bịa thêm giao dịch hoặc số tiền ngoài dữ liệu.
+- Phải nhắc đến tổng thu, tổng chi, số dư, danh mục chi nhiều nhất, ngân sách và việc nên làm tuần này.
+
+Dữ liệu gốc:
+$originalPrompt
+''';
+}
+
+bool _usefulAiText(String text, {required String fallback}) {
+  final normalized = text.trim();
+  final bulletCount = RegExp(r'(^|\n)\s*[-•]').allMatches(normalized).length;
+  final minLength = fallback.length > 650
+      ? (fallback.length * 0.9).round()
+      : 650;
+  return normalized.length >= minLength && bulletCount >= 5;
+}
+
+String _buildLocalInsight(
+  List<AppTransaction> transactions,
+  List<AppBudget> budgets,
+) {
+  final totalIncome = _sumByType(transactions, AppTransactionType.income);
+  final totalExpense = _sumByType(transactions, AppTransactionType.expense);
+  final balance = totalIncome - totalExpense;
+  final savingsRate = totalIncome <= 0 ? 0.0 : balance / totalIncome * 100;
+  final categoryTotals = _expenseCategoryTotals(transactions);
+  final currentMonthKey = monthKey(DateTime.now());
+  final currentBudgets = budgets
+      .where((budget) => budget.periodKey == currentMonthKey)
+      .toList();
+  final monthlySpent = _monthlyExpenseByCategory(transactions, currentMonthKey);
+  final totalBudget = currentBudgets.fold<int>(
+    0,
+    (sum, budget) => sum + budget.limitAmount,
+  );
+  final spentThisMonth = monthlySpent.values.fold<int>(
+    0,
+    (sum, amount) => sum + amount,
+  );
+  final remainingBudget = totalBudget - spentThisMonth;
+  final topCategory = categoryTotals.isEmpty ? null : categoryTotals.first;
+  final topPercent = topCategory == null || totalExpense <= 0
+      ? 0.0
+      : topCategory.amount / totalExpense * 100;
+  final overBudgetCategories = currentBudgets.where((budget) {
+    final spent = monthlySpent[budget.category] ?? 0;
+    return spent > budget.limitAmount;
+  }).toList();
+
+  final lines = <String>[
+    '- Tổng quan: Bạn có ${transactions.length} giao dịch, tổng thu ${formatVnd(totalIncome)}, tổng chi ${formatVnd(totalExpense)}, số dư ${formatVnd(balance)}.',
+    '- Tỷ lệ tiết kiệm hiện tại khoảng ${savingsRate.clamp(0, 100).toStringAsFixed(1)}%, phù hợp nếu bạn muốn giữ lại một phần thu nhập để dự phòng.',
+  ];
+
+  if (topCategory != null) {
+    lines.add(
+      '- Danh mục chi nhiều nhất là ${topCategory.category} với ${formatVnd(topCategory.amount)}, chiếm khoảng ${topPercent.toStringAsFixed(1)}% tổng chi.',
+    );
+  } else {
+    lines.add(
+      '- Hiện chưa có khoản chi nào, bạn cần thêm giao dịch chi tiêu để AI phân tích thói quen chi tiêu rõ hơn.',
+    );
+  }
+
+  if (totalBudget > 0) {
+    lines.add(
+      '- Ngân sách tháng này đã dùng ${formatVnd(spentThisMonth)} / ${formatVnd(totalBudget)}, còn lại ${formatVnd(remainingBudget)}.',
+    );
+  } else {
+    lines.add(
+      '- Bạn chưa đặt ngân sách tháng này, nên đặt giới hạn cho các nhóm như ăn uống, đi lại, mua sắm và học tập.',
+    );
+  }
+
+  if (overBudgetCategories.isNotEmpty) {
+    final names = overBudgetCategories
+        .map((budget) => budget.category)
+        .join(', ');
+    lines.add(
+      '- Cần chú ý các danh mục vượt ngân sách: $names. Hãy giảm chi hoặc tăng ngân sách nếu đây là khoản bắt buộc.',
+    );
+  } else if (currentBudgets.isNotEmpty) {
+    lines.add(
+      '- Chưa có danh mục nào vượt ngân sách, bạn đang kiểm soát chi tiêu tháng này khá ổn.',
+    );
+  }
+
+  if (transactions.length < 5) {
+    lines.add(
+      '- Dữ liệu còn ít, hãy ghi thêm giao dịch trong vài ngày tới để phần phân tích chính xác hơn.',
+    );
+  } else {
+    lines.add(
+      '- Việc nên làm tiếp theo trong tuần này: xem lại danh mục chi lớn nhất và đặt mục tiêu giảm 5-10% nếu đó là khoản không bắt buộc.',
+    );
+  }
+
+  return lines.join('\n');
 }
 
 String _amountForPrompt(int amount) => '$amount VND';

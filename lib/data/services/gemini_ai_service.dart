@@ -5,19 +5,23 @@ class GeminiAiService {
     : _functions =
           functions ?? FirebaseFunctions.instanceFor(region: _functionRegion);
 
-  static const _functionRegion = 'asia-southeast1';
+  static const _functionRegion = 'us-central1';
   static const _functionName = 'generateaiinsights';
 
   final FirebaseFunctions _functions;
 
-  Future<String> generateExpenseInsights(String prompt) async {
+  Future<String> generateExpenseInsights(
+    String prompt, {
+    int maxOutputTokens = 1600,
+  }) async {
     try {
       final callable = _functions.httpsCallable(
         _functionName,
-        options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 90)),
       );
       final result = await callable.call<Map<String, dynamic>>({
         'prompt': prompt,
+        'maxOutputTokens': maxOutputTokens,
       });
       final data = result.data;
       final text = data['text'];

@@ -19,6 +19,47 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final _repository = FirestoreRepository();
   var _filter = _NotificationFilter.all;
+  var _isDeleting = false;
+
+  Future<void> _deleteAllNotifications() async {
+    if (_isDeleting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Xóa tất cả thông báo?'),
+          content: const Text('Toàn bộ thông báo hiện tại sẽ bị xóa.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Xóa hết'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await _repository.deleteAllNotifications();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã xóa tất cả thông báo.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,29 +110,63 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              '$unread thông báo chưa đọc',
-                              style: AppTextStyles.titleMedium,
-                            ),
-                          ),
-                          SegmentedButton<_NotificationFilter>(
-                            segments: const [
-                              ButtonSegment(
-                                value: _NotificationFilter.all,
-                                label: Text('Tất cả'),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '$unread thông báo chưa đọc',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.titleMedium,
+                                ),
                               ),
-                              ButtonSegment(
-                                value: _NotificationFilter.unread,
-                                label: Text('Chưa đọc'),
+                              const SizedBox(width: 12),
+                              IconButton.filledTonal(
+                                tooltip: 'Xóa tất cả',
+                                onPressed: notifications.isEmpty || _isDeleting
+                                    ? null
+                                    : _deleteAllNotifications,
+                                icon: _isDeleting
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.delete_sweep_outlined),
                               ),
                             ],
-                            selected: {_filter},
-                            onSelectionChanged: (value) {
-                              setState(() => _filter = value.first);
-                            },
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 40,
+                            child: SegmentedButton<_NotificationFilter>(
+                              showSelectedIcon: false,
+                              style: ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                padding: WidgetStateProperty.all(
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                                ),
+                              ),
+                              segments: const [
+                                ButtonSegment(
+                                  value: _NotificationFilter.all,
+                                  label: Text('Tất cả'),
+                                ),
+                                ButtonSegment(
+                                  value: _NotificationFilter.unread,
+                                  label: Text('Chưa đọc'),
+                                ),
+                              ],
+                              selected: {_filter},
+                              onSelectionChanged: (value) {
+                                setState(() => _filter = value.first);
+                              },
+                            ),
                           ),
                         ],
                       ),

@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
+  Bell,
+  Bug,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  ExternalLink,
+  FileText,
   Lock,
   LogOut,
   RefreshCcw,
   Search,
+  Send,
   ShieldCheck,
+  Trash2,
   TrendingDown,
   TrendingUp,
   UserCog,
@@ -23,14 +29,20 @@ import {
 import {
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import {
+  deleteObject,
+  ref,
+} from 'firebase/storage';
 
-import { auth, db } from './firebase';
+import { auth, db, functions, storage } from './firebase';
 
 const currency = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
@@ -203,6 +215,10 @@ function AdminDashboard({ adminProfile, onSignOut }) {
   const [usersData, setUsersData] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [bugReports, setBugReports] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignRecipients, setCampaignRecipients] = useState([]);
   const [activeView, setActiveView] = useState('overview');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [queryText, setQueryText] = useState('');
@@ -253,6 +269,60 @@ function AdminDashboard({ adminProfile, onSignOut }) {
         collectionGroup(db, 'budgets'),
         (snapshot) => {
           setBudgets(snapshot.docs.map((item) => normalizeBudget(item)));
+        },
+        (err) => setError(firestoreMessage(err)),
+      ),
+    );
+
+    unsubscribers.push(
+      onSnapshot(
+        collection(db, 'documents'),
+        (snapshot) => {
+          setDocuments(
+            snapshot.docs
+              .map((item) => normalizeDocument(item))
+              .sort((a, b) => b.createdAtMs - a.createdAtMs),
+          );
+        },
+        (err) => setError(firestoreMessage(err)),
+      ),
+    );
+
+    unsubscribers.push(
+      onSnapshot(
+        collection(db, 'bugReports'),
+        (snapshot) => {
+          setBugReports(
+            snapshot.docs
+              .map((item) => normalizeBugReport(item))
+              .sort((a, b) => b.createdAtMs - a.createdAtMs),
+          );
+        },
+        (err) => setError(firestoreMessage(err)),
+      ),
+    );
+
+    unsubscribers.push(
+      onSnapshot(
+        collection(db, 'notificationCampaigns'),
+        (snapshot) => {
+          setCampaigns(
+            snapshot.docs
+              .map((item) => normalizeCampaign(item))
+              .sort((a, b) => b.createdAtMs - a.createdAtMs),
+          );
+        },
+        (err) => setError(firestoreMessage(err)),
+      ),
+    );
+
+    unsubscribers.push(
+      onSnapshot(
+        collectionGroup(db, 'recipients'),
+        (snapshot) => {
+          setCampaignRecipients(
+            snapshot.docs.map((item) => normalizeCampaignRecipient(item)),
+          );
         },
         (err) => setError(firestoreMessage(err)),
       ),
@@ -314,11 +384,20 @@ function AdminDashboard({ adminProfile, onSignOut }) {
     () => buildUserRankings(appUsers, reportTransactions),
     [appUsers, reportTransactions],
   );
+  const campaignStats = useMemo(
+    () => buildCampaignStats(campaigns, campaignRecipients),
+    [campaigns, campaignRecipients],
+  );
   const viewTitle = {
     overview: 'Tổng quan hệ thống',
     users: 'Quản lý người dùng',
     reports: 'Báo cáo tài chính',
   }[activeView];
+  const extendedViewTitle = {
+    documents: 'Quản lý tài liệu PDF',
+    bugs: 'Báo cáo lỗi',
+    campaigns: 'Gửi thông báo',
+  }[activeView] || viewTitle;
 
   async function updateUser(uid, updates) {
     try {
@@ -369,6 +448,30 @@ function AdminDashboard({ adminProfile, onSignOut }) {
             <CircleDollarSign size={18} />
             Báo cáo
           </button>
+          <button
+            className={activeView === 'documents' ? 'active' : ''}
+            onClick={() => setActiveView('documents')}
+            type="button"
+          >
+            <FileText size={18} />
+            Tài liệu
+          </button>
+          <button
+            className={activeView === 'bugs' ? 'active' : ''}
+            onClick={() => setActiveView('bugs')}
+            type="button"
+          >
+            <Bug size={18} />
+            Bug
+          </button>
+          <button
+            className={activeView === 'campaigns' ? 'active' : ''}
+            onClick={() => setActiveView('campaigns')}
+            type="button"
+          >
+            <Bell size={18} />
+            Thông báo
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -382,7 +485,7 @@ function AdminDashboard({ adminProfile, onSignOut }) {
       <main className="dashboard">
         <header className="topbar">
           <div>
-            <h1 className="dynamic-title">{viewTitle}</h1>
+            <h1 className="dynamic-title">{extendedViewTitle}</h1>
             <p>Xin chào, {adminProfile?.fullName || 'Admin'}</p>
             <h1>Quản lý người dùng & báo cáo</h1>
           </div>
@@ -529,10 +632,328 @@ function AdminDashboard({ adminProfile, onSignOut }) {
               </Panel>
               </section>
             )}
+
+            {activeView === 'documents' && (
+              <DocumentsManager documents={documents} onError={setError} />
+            )}
+
+            {activeView === 'bugs' && (
+              <BugReportsManager
+                reports={bugReports}
+                users={appUsers}
+                onError={setError}
+              />
+            )}
+
+            {activeView === 'campaigns' && (
+              <CampaignManager
+                users={appUsers}
+                campaigns={campaignStats}
+                onError={setError}
+              />
+            )}
           </>
         )}
       </main>
     </div>
+  );
+}
+
+function DocumentsManager({ documents, onError }) {
+  const [searchText, setSearchText] = useState('');
+  const filteredDocuments = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return documents;
+
+    return documents.filter((item) => {
+      return [
+        item.title,
+        item.fileName,
+        item.userName,
+        item.userEmail,
+        item.userId,
+        item.uploadedBy,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword);
+    });
+  }, [documents, searchText]);
+
+  async function removeDocument(documentItem) {
+    try {
+      if (documentItem.storagePath) {
+        await deleteObject(ref(storage, documentItem.storagePath));
+      }
+      await deleteDoc(doc(db, 'documents', documentItem.id));
+    } catch (err) {
+      onError(firestoreMessage(err));
+    }
+  }
+
+  return (
+    <section className="management-grid management-grid--single">
+      <Panel title="Danh sách tài liệu">
+        <div className="search-box document-search">
+          <Search size={18} />
+          <input
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Tìm theo tên báo cáo, người xuất, email, UID..."
+          />
+        </div>
+        <div className="admin-list">
+          {documents.length === 0 ? (
+            <p className="empty-text">Chưa có tài liệu PDF.</p>
+          ) : filteredDocuments.length === 0 ? (
+            <p className="empty-text">Không tìm thấy tài liệu phù hợp.</p>
+          ) : (
+            filteredDocuments.map((item) => (
+              <div className="admin-row" key={item.id}>
+                <FileText size={22} />
+                <span>
+                  <strong>{item.title || item.fileName || 'Tài liệu'}</strong>
+                  <small>
+                    {item.category} • {formatDate(item.createdAt || new Date())}
+                  </small>
+                  <small>
+                    Người xuất: {item.userName || item.userEmail || item.userId || 'Không rõ'}
+                  </small>
+                  {item.periodLabel && <small>Kỳ thống kê: {item.periodLabel}</small>}
+                </span>
+                {item.fileUrl && (
+                  <a className="icon-link" href={item.fileUrl} rel="noreferrer" target="_blank">
+                    <ExternalLink size={18} />
+                  </a>
+                )}
+                <button className="danger-icon-button" onClick={() => removeDocument(item)} type="button">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+function BugReportsManager({ reports, users, onError }) {
+  const [searchText, setSearchText] = useState('');
+  const userById = useMemo(() => {
+    return users.reduce((acc, user) => {
+      acc[user.id] = user;
+      return acc;
+    }, {});
+  }, [users]);
+  const visibleReports = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    const enrichedReports = reports.map((report) => {
+      const owner = userById[report.userId];
+      const userName = report.userName || owner?.fullName || '';
+      const userEmail = report.userEmail || owner?.email || '';
+      return { ...report, userName, userEmail };
+    });
+
+    if (!keyword) return enrichedReports;
+
+    return enrichedReports.filter((report) => {
+      return [
+        report.title,
+        report.description,
+        report.userName,
+        report.userEmail,
+        report.userId,
+        report.screenName,
+        report.status,
+        report.severity,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword);
+    });
+  }, [reports, searchText, userById]);
+
+  async function updateStatus(report, status) {
+    try {
+      await updateDoc(doc(db, 'bugReports', report.id), {
+        status,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      onError(firestoreMessage(err));
+    }
+  }
+
+  return (
+    <Panel title="Báo cáo lỗi từ mobile">
+      <div className="search-box document-search">
+        <Search size={18} />
+        <input
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          placeholder="Tìm theo tên lỗi, người gửi, email, màn hình..."
+        />
+      </div>
+      <div className="admin-list">
+        {reports.length === 0 ? (
+          <p className="empty-text">Chưa có bug report nào.</p>
+        ) : visibleReports.length === 0 ? (
+          <p className="empty-text">Không tìm thấy bug report phù hợp.</p>
+        ) : (
+          visibleReports.map((report) => (
+            <div className="bug-row" key={report.id}>
+              <div className="bug-row-heading">
+                <Bug size={22} />
+                <span>
+                  <strong>{report.title}</strong>
+                  <small>
+                    Người gửi: {report.userName || report.userEmail || report.userId || 'Không rõ'}
+                  </small>
+                  <small>
+                    {report.userEmail || report.userId} • {report.screenName || 'Không rõ'} •{' '}
+                    {formatDate(report.createdAt || new Date())}
+                  </small>
+                </span>
+                <Badge tone={bugStatusTone(report.status)}>
+                  {bugStatusLabel(report.status)}
+                </Badge>
+              </div>
+              <p>{report.description}</p>
+              <div className="bug-row-actions">
+                {report.imageUrl && (
+                  <a className="ghost-button" href={report.imageUrl} rel="noreferrer" target="_blank">
+                    <ExternalLink size={18} />
+                    Xem ảnh
+                  </a>
+                )}
+                <select
+                  value={report.status}
+                  onChange={(event) => updateStatus(report, event.target.value)}
+                >
+                  <option value="pending">Chờ xử lý</option>
+                  <option value="in_progress">Đang xử lý</option>
+                  <option value="resolved">Đã xử lý</option>
+                  <option value="rejected">Từ chối</option>
+                </select>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function CampaignManager({ users, campaigns, onError }) {
+  const [form, setForm] = useState({
+    title: '',
+    body: '',
+    targetType: 'all',
+    targetUserId: '',
+  });
+  const [loading, setLoading] = useState(false);
+
+  async function sendCampaign(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const callable = httpsCallable(functions, 'sendNotificationCampaign');
+      await callable({
+        title: form.title.trim(),
+        body: form.body.trim(),
+        type: 'campaign',
+        targetType: form.targetType,
+        targetUserIds:
+          form.targetType === 'selected' && form.targetUserId
+            ? [form.targetUserId]
+            : [],
+      });
+      setForm({ title: '', body: '', targetType: 'all', targetUserId: '' });
+    } catch (err) {
+      onError(firestoreMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="management-grid campaign-management-grid">
+      <Panel title="Gửi thông báo">
+        <form className="admin-form" onSubmit={sendCampaign}>
+          <label>
+            Tiêu đề
+            <input
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Nội dung
+            <textarea
+              value={form.body}
+              onChange={(event) => setForm({ ...form, body: event.target.value })}
+              required
+              rows={4}
+            />
+          </label>
+          <label>
+            Người nhận
+            <select
+              value={form.targetType}
+              onChange={(event) => setForm({ ...form, targetType: event.target.value })}
+            >
+              <option value="all">Tất cả người dùng</option>
+              <option value="selected">Chọn một người dùng</option>
+            </select>
+          </label>
+          {form.targetType === 'selected' && (
+            <label>
+              Người dùng
+              <select
+                value={form.targetUserId}
+                onChange={(event) => setForm({ ...form, targetUserId: event.target.value })}
+                required
+              >
+                <option value="">Chọn người dùng</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName || user.email || user.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button className="primary-button" disabled={loading} type="submit">
+            <Send size={18} />
+            {loading ? 'Đang gửi...' : 'Gửi xuống máy'}
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title="Thống kê campaign">
+        <div className="admin-list">
+          {campaigns.length === 0 ? (
+            <p className="empty-text">Chưa có campaign nào.</p>
+          ) : (
+            campaigns.map((campaign) => (
+              <div className="campaign-row" key={campaign.id}>
+                <strong>{campaign.title}</strong>
+                <p>{campaign.body}</p>
+                <div className="campaign-metrics">
+                  <span>Người nhận: {campaign.targetUserCount}</span>
+                  <span>Gửi thành công: {campaign.sentCount}</span>
+                  <span>Lỗi: {campaign.failedCount}</span>
+                  <span>Đã mở: {campaign.openedCount}</span>
+                  <span>Đã đọc: {campaign.readCount}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Panel>
+    </section>
   );
 }
 
@@ -1452,6 +1873,115 @@ function normalizeBudget(snapshot) {
     period: data.period || 'monthly',
     periodKey: data.periodKey || '',
   };
+}
+
+function normalizeDocument(snapshot) {
+  const data = snapshot.data();
+  const createdAt = toDate(data.createdAt);
+  const updatedAt = toDate(data.updatedAt);
+  return {
+    id: snapshot.id,
+    title: data.title || '',
+    description: data.description || '',
+    category: data.category || 'Chung',
+    fileName: data.fileName || '',
+    fileUrl: data.fileUrl || '',
+    storagePath: data.storagePath || '',
+    isPublished: Boolean(data.isPublished),
+    source: data.source || '',
+    uploadedBy: data.uploadedBy || '',
+    userId: data.userId || data.uploadedBy || '',
+    userName: data.userName || '',
+    userEmail: data.userEmail || '',
+    periodLabel: data.periodLabel || '',
+    createdAt,
+    updatedAt,
+    createdAtMs: createdAt?.getTime() || 0,
+  };
+}
+
+function normalizeBugReport(snapshot) {
+  const data = snapshot.data();
+  const createdAt = toDate(data.createdAt);
+  const updatedAt = toDate(data.updatedAt);
+  return {
+    id: snapshot.id,
+    userId: data.userId || '',
+    userEmail: data.userEmail || '',
+    userName: data.userName || '',
+    title: data.title || '',
+    description: data.description || '',
+    severity: data.severity || 'medium',
+    status: data.status || 'pending',
+    screenName: data.screenName || '',
+    imageUrl: data.imageUrl || '',
+    createdAt,
+    updatedAt,
+    createdAtMs: createdAt?.getTime() || 0,
+  };
+}
+
+function normalizeCampaign(snapshot) {
+  const data = snapshot.data();
+  const createdAt = toDate(data.createdAt);
+  const sentAt = toDate(data.sentAt);
+  return {
+    id: snapshot.id,
+    title: data.title || '',
+    body: data.body || '',
+    status: data.status || 'draft',
+    targetType: data.targetType || 'all',
+    targetUserCount: Number(data.targetUserCount || 0),
+    sentCount: Number(data.sentCount || 0),
+    failedCount: Number(data.failedCount || 0),
+    createdAt,
+    sentAt,
+    createdAtMs: createdAt?.getTime() || 0,
+  };
+}
+
+function normalizeCampaignRecipient(snapshot) {
+  const data = snapshot.data();
+  return {
+    id: snapshot.id,
+    campaignId: snapshot.ref.parent.parent?.id || '',
+    userId: data.userId || snapshot.id,
+    notificationId: data.notificationId || '',
+    isRead: Boolean(data.isRead),
+    openedAt: toDate(data.openedAt),
+    readAt: toDate(data.readAt),
+  };
+}
+
+function buildCampaignStats(campaigns, recipients) {
+  const recipientsByCampaign = recipients.reduce((acc, recipient) => {
+    acc[recipient.campaignId] ||= [];
+    acc[recipient.campaignId].push(recipient);
+    return acc;
+  }, {});
+
+  return campaigns.map((campaign) => {
+    const campaignRecipients = recipientsByCampaign[campaign.id] || [];
+    return {
+      ...campaign,
+      openedCount: campaignRecipients.filter((item) => item.openedAt).length,
+      readCount: campaignRecipients.filter((item) => item.isRead || item.readAt).length,
+      targetUserCount: campaign.targetUserCount || campaignRecipients.length,
+    };
+  });
+}
+
+function bugStatusLabel(status) {
+  if (status === 'in_progress') return 'Đang xử lý';
+  if (status === 'resolved') return 'Đã xử lý';
+  if (status === 'rejected') return 'Từ chối';
+  return 'Chờ xử lý';
+}
+
+function bugStatusTone(status) {
+  if (status === 'resolved') return 'primary';
+  if (status === 'rejected') return 'danger';
+  return 'muted';
 }
 
 function toDate(value) {

@@ -15,6 +15,8 @@ abstract final class AppRoutes {
   static const editProfile = '/edit-profile';
   static const settings = '/settings';
   static const aiInsights = '/ai-insights';
+  static const documents = '/documents';
+  static const bugReport = '/bug-report';
   static const register = '/register';
   static const forgotPassword = '/forgot-password';
 }
