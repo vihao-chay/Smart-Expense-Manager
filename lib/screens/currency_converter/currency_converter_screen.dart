@@ -89,7 +89,9 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
               builder: (context, snapshot) {
                 final result = snapshot.data;
                 final rate = result?.rateFor(_toCurrency);
-                final amount = double.tryParse(_amountController.text) ?? 0;
+                final amount = _fromCurrency == 'VND'
+                    ? (parseVndInput(_amountController.text)?.toDouble() ?? 0)
+                    : (double.tryParse(_amountController.text) ?? 0);
                 final converted = rate == null ? null : amount * rate;
 
                 return ListView(
@@ -106,7 +108,14 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
                       onFromChanged: (value) {
                         if (value == null || value == _fromCurrency) return;
                         setState(() {
+                          final raw =
+                              parseVndInput(_amountController.text) ??
+                              double.tryParse(_amountController.text)?.round() ??
+                              0;
                           _fromCurrency = value;
+                          _amountController.text = value == 'VND'
+                              ? formatVndDigits(raw.toString())
+                              : raw.toString();
                           _ratesFuture = _service.latest(_fromCurrency);
                         });
                       },
@@ -116,9 +125,16 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
                       },
                       onSwap: () {
                         setState(() {
+                          final raw =
+                              parseVndInput(_amountController.text) ??
+                              double.tryParse(_amountController.text)?.round() ??
+                              0;
                           final oldFrom = _fromCurrency;
                           _fromCurrency = _toCurrency;
                           _toCurrency = oldFrom;
+                          _amountController.text = _fromCurrency == 'VND'
+                              ? formatVndDigits(raw.toString())
+                              : raw.toString();
                           _ratesFuture = _service.latest(_fromCurrency);
                         });
                       },
@@ -226,9 +242,14 @@ class _CurrencyInputRow extends StatelessWidget {
       currency: currency,
       onCurrencyChanged: onCurrencyChanged,
       child: TextField(
+        key: ValueKey('amount-$currency'),
         controller: controller,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+        keyboardType: TextInputType.numberWithOptions(
+          decimal: currency != 'VND',
+        ),
+        inputFormatters: currency == 'VND'
+            ? [VndInputFormatter()]
+            : [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
         onChanged: (_) => onChanged(),
         style: AppTextStyles.headlineLarge,
         decoration: const InputDecoration(

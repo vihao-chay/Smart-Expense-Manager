@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -692,7 +691,9 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
   void initState() {
     super.initState();
     _controller = TextEditingController(
-      text: widget.initialAmount == null ? '' : widget.initialAmount.toString(),
+      text: widget.initialAmount == null
+          ? ''
+          : formatVndDigits(widget.initialAmount.toString()),
     );
   }
 
@@ -705,7 +706,7 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    Navigator.of(context).pop(int.parse(_controller.text));
+    Navigator.of(context).pop(parseVndInput(_controller.text) ?? 0);
   }
 
   @override
@@ -785,7 +786,7 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
               autofocus: true,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: [VndInputFormatter()],
               style: AppTextStyles.displayCurrency.copyWith(
                 fontSize: 34,
                 color: AppColors.primary,
@@ -809,7 +810,7 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
                 ),
               ),
               validator: (value) {
-                final amount = int.tryParse(value ?? '') ?? 0;
+                final amount = parseVndInput(value) ?? 0;
                 if (amount <= 0) return 'Nhập số tiền lớn hơn 0';
                 return null;
               },
