@@ -106,8 +106,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              _OverviewHero(stats: stats),
-                              const SizedBox(height: 14),
                               _ChartsSection(
                                 bars: bars,
                                 categories: categories,
@@ -309,8 +307,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   String get _pdfPeriodLabel {
     return switch (_selectedPeriod) {
       _Period.week => _pdfWeekLabel(_anchorDate),
-      _Period.month => 'Thang ${_anchorDate.month}/${_anchorDate.year}',
-      _Period.year => 'Nam ${_anchorDate.year}',
+      _Period.month => 'Tháng ${_anchorDate.month}/${_anchorDate.year}',
+      _Period.year => 'Năm ${_anchorDate.year}',
     };
   }
 
@@ -379,35 +377,30 @@ class _PeriodToolbar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: isExportingPdf ? null : onExportPdf,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Ink(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryFixed.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: isExportingPdf
-                        ? Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: AppColors.primary,
-                            ),
-                          )
-                        : Icon(
-                            Icons.picture_as_pdf_rounded,
-                            color: AppColors.primary,
-                          ),
+              IconButton(
+                tooltip: isExportingPdf ? 'Đang xuất PDF…' : 'Xuất PDF',
+                onPressed: isExportingPdf ? null : onExportPdf,
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.onSurfaceVariant,
+                  disabledForegroundColor: AppColors.primary,
+                  backgroundColor: AppColors.surfaceContainerLow,
+                  disabledBackgroundColor: AppColors.surfaceContainerLow,
+                  overlayColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  fixedSize: const Size(44, 44),
+                  padding: EdgeInsets.zero,
                 ),
+                icon: isExportingPdf
+                    ? SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : const Icon(Icons.picture_as_pdf_rounded),
               ),
             ],
           ),
@@ -478,184 +471,6 @@ class _PeriodPill extends StatelessWidget {
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _OverviewHero extends StatelessWidget {
-  const _OverviewHero({required this.stats});
-
-  final _Stats stats;
-
-  @override
-  Widget build(BuildContext context) {
-    final isPositive = stats.savings >= 0;
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primaryContainer,
-            AppColors.primary,
-            AppColors.tertiary,
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.26),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -28,
-              top: -36,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Số dư kỳ này',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.82),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    formatVnd(stats.savings),
-                    style: AppTextStyles.displayCurrency.copyWith(
-                      color: Colors.white,
-                      fontSize: 32,
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isPositive
-                        ? 'Tiết kiệm ${stats.savingsRate.toStringAsFixed(1)}% thu nhập'
-                        : 'Chi vượt thu trong kỳ này',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.78),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.14),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _HeroMetric(
-                            label: 'Thu nhập',
-                            amount: stats.income,
-                            icon: Icons.north_east_rounded,
-                            accent: const Color(0xFF86EFAC),
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 36,
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                        Expanded(
-                          child: _HeroMetric(
-                            label: 'Chi tiêu',
-                            amount: stats.expense,
-                            icon: Icons.south_west_rounded,
-                            accent: const Color(0xFFFCA5A5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroMetric extends StatelessWidget {
-  const _HeroMetric({
-    required this.label,
-    required this.amount,
-    required this.icon,
-    required this.accent,
-  });
-
-  final String label;
-  final int amount;
-  final IconData icon;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 16, color: accent),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: Colors.white.withValues(alpha: 0.75),
-                  ),
-                ),
-                Text(
-                  formatVnd(amount),
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1704,7 +1519,7 @@ Future<Uint8List> _buildStatisticsPdf({
           ),
           pw.SizedBox(height: 8),
           pw.Text(
-            'Ky thong ke: $periodLabel',
+            'Ky thong ke: ${_safePdfText(periodLabel)}',
             style: const pw.TextStyle(fontSize: 12),
           ),
           pw.Text(
@@ -1939,7 +1754,7 @@ String _weekLabel(DateTime date) {
 String _pdfWeekLabel(DateTime date) {
   final start = _startOfWeek(date);
   final end = start.add(const Duration(days: 6));
-  return 'Tuan ${_formatPdfDate(start)} - ${_formatPdfDate(end)}';
+  return 'Tuần ${_formatPdfDate(start)} - ${_formatPdfDate(end)}';
 }
 
 String _formatPdfDate(DateTime date) {

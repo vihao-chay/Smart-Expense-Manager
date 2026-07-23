@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -75,7 +74,7 @@ class _EditTransactionScreenState extends State<EditTransactionScreen> {
       _selectedCategory = transaction.category;
       _selectedDate = transaction.transactionDate;
       _titleController.text = transaction.title ?? transaction.category;
-      _amountController.text = transaction.amount.toString();
+      _amountController.text = formatVndDigits(transaction.amount.toString());
       _noteController.text = transaction.note ?? '';
       setState(() => _isLoading = false);
     } catch (error) {
@@ -119,7 +118,7 @@ class _EditTransactionScreenState extends State<EditTransactionScreen> {
     try {
       final updated = original.copyWith(
         type: _type,
-        amount: int.parse(_amountController.text),
+        amount: parseVndInput(_amountController.text) ?? 0,
         category: _selectedCategory,
         transactionDate: _selectedDate,
         title: _titleController.text.trim().isEmpty
@@ -270,7 +269,7 @@ class _EditTransactionScreenState extends State<EditTransactionScreen> {
                           focusNode: _amountFocus,
                           accent: accent,
                           validator: (value) {
-                            final amount = int.tryParse(value ?? '') ?? 0;
+                            final amount = parseVndInput(value) ?? 0;
                             if (amount <= 0) return 'Nhập số tiền hợp lệ';
                             return null;
                           },
@@ -433,7 +432,7 @@ class _AmountField extends StatelessWidget {
           focusNode: focusNode,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          inputFormatters: [VndInputFormatter()],
           validator: validator,
           style: AppTextStyles.displayCurrency.copyWith(
             fontSize: 40,

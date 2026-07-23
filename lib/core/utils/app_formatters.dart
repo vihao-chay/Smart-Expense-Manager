@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+
 import '../../data/models/app_transaction.dart';
 
 String formatVnd(num value, {bool withSign = false}) {
@@ -8,8 +10,17 @@ String formatVnd(num value, {bool withSign = false}) {
       ? '+'
       : '';
   final digits = rounded.abs().toString();
-  final buffer = StringBuffer();
 
+  return '$sign${formatVndDigits(digits)} đ';
+}
+
+/// Formats raw digits with Vietnamese thousand separators: `1000000` → `1.000.000`.
+String formatVndDigits(String rawDigits) {
+  var digits = rawDigits.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return '';
+  digits = digits.replaceFirst(RegExp(r'^0+(?=.)'), '');
+
+  final buffer = StringBuffer();
   for (var i = 0; i < digits.length; i++) {
     final positionFromEnd = digits.length - i;
     buffer.write(digits[i]);
@@ -17,8 +28,30 @@ String formatVnd(num value, {bool withSign = false}) {
       buffer.write('.');
     }
   }
+  return buffer.toString();
+}
 
-  return '$sign${buffer.toString()} đ';
+/// Parses Vietnamese money input like `1.000.000` → `1000000`.
+int? parseVndInput(String? value) {
+  if (value == null) return null;
+  final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return null;
+  return int.tryParse(digits);
+}
+
+/// Live formatter for VND amount fields (`1.000.000`).
+class VndInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final formatted = formatVndDigits(newValue.text);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }
 
 String formatTransactionAmount(AppTransaction transaction) {

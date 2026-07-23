@@ -64,16 +64,18 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Quay lại',
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_rounded),
+          color: AppColors.onSurfaceVariant,
         ),
         title: Text(
           'Tài liệu PDF',
           style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.primary,
+            color: AppColors.onSurface,
           ),
         ),
       ),
@@ -87,7 +89,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 searchQuery: _searchQuery,
               ),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
@@ -97,25 +100,99 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 }
 
                 final documents = snapshot.data ?? [];
+                final searching = _searchQuery.trim().isNotEmpty;
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                return Column(
                   children: [
-                    _FilterCard(
-                      controller: _searchController,
-                      onSearchChanged: _onSearchChanged,
-                    ),
-                    const SizedBox(height: 16),
-                    if (documents.isEmpty)
-                      const _EmptyDocuments()
-                    else
-                      for (final document in documents) ...[
-                        _DocumentCard(
-                          document: document,
-                          onOpen: () => _openDocument(document),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        textInputAction: TextInputAction.search,
+                        style: AppTextStyles.bodyMedium,
+                        decoration: InputDecoration(
+                          hintText: 'Tìm báo cáo...',
+                          hintStyle: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurfaceVariant.withValues(
+                              alpha: 0.7,
+                            ),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Xóa',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _onSearchChanged('');
+                                    setState(() => _searchQuery = '');
+                                  },
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                          filled: true,
+                          fillColor: AppColors.surfaceContainerLowest,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: AppColors.outlineVariant.withValues(
+                                alpha: 0.2,
+                              ),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: AppColors.outlineVariant.withValues(
+                                alpha: 0.2,
+                              ),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: AppColors.primary.withValues(alpha: 0.45),
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 10),
-                      ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${documents.length} tài liệu',
+                          style: AppTextStyles.labelMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: documents.isEmpty
+                          ? _EmptyDocuments(searching: searching)
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                              itemCount: documents.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final document = documents[index];
+                                return _DocumentTile(
+                                  document: document,
+                                  onOpen: () => _openDocument(document),
+                                );
+                              },
+                            ),
+                    ),
                   ],
                 );
               },
@@ -127,96 +204,78 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 }
 
-class _FilterCard extends StatelessWidget {
-  const _FilterCard({required this.controller, required this.onSearchChanged});
-
-  final TextEditingController controller;
-  final ValueChanged<String> onSearchChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.20),
-        ),
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onSearchChanged,
-        textInputAction: TextInputAction.search,
-        decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.search_rounded),
-          hintText: 'Tìm theo tên báo cáo...',
-          border: OutlineInputBorder(),
-        ),
-      ),
-    );
-  }
-}
-
-class _DocumentCard extends StatelessWidget {
-  const _DocumentCard({required this.document, required this.onOpen});
+class _DocumentTile extends StatelessWidget {
+  const _DocumentTile({required this.document, required this.onOpen});
 
   final AppDocument document;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
+    final category = document.category.trim().isEmpty
+        ? 'Chung'
+        : document.category.trim();
+
     return Material(
-      color: Colors.transparent,
+      color: AppColors.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onOpen,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Ink(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: AppColors.outlineVariant.withValues(alpha: 0.20),
+              color: AppColors.outlineVariant.withValues(alpha: 0.14),
             ),
           ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.errorContainer,
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryFixed.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(11),
+                ),
                 child: Icon(
                   Icons.picture_as_pdf_rounded,
-                  color: AppColors.error,
+                  color: AppColors.primary,
+                  size: 20,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(document.title, style: AppTextStyles.titleMedium),
-                    const SizedBox(height: 4),
                     Text(
-                      document.description.isEmpty
-                          ? document.category
-                          : document.description,
-                      maxLines: 2,
+                      document.title.trim().isEmpty
+                          ? 'Báo cáo PDF'
+                          : document.title.trim(),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 2),
                     Text(
-                      '${document.category} • ${formatDateTime(document.createdAt)}',
-                      style: AppTextStyles.labelMedium,
+                      '$category · ${formatRelativeTime(document.createdAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Icon(Icons.open_in_new_rounded, color: AppColors.primary),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.onSurfaceVariant,
+              ),
             ],
           ),
         ),
@@ -226,31 +285,21 @@ class _DocumentCard extends StatelessWidget {
 }
 
 class _EmptyDocuments extends StatelessWidget {
-  const _EmptyDocuments();
+  const _EmptyDocuments({required this.searching});
+
+  final bool searching;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.folder_open_rounded,
-            size: 42,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Text(
+          searching ? 'Không tìm thấy tài liệu.' : 'Chưa có tài liệu PDF.',
+          style: AppTextStyles.bodyMedium.copyWith(
             color: AppColors.onSurfaceVariant,
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Chưa có tài liệu PDF.',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
