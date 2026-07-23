@@ -88,15 +88,17 @@ class _HomeContent extends StatelessWidget {
     final recent = transactions.take(5).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
       children: [
-        _BalanceCard(
+        _BalanceHero(
           balance: balance,
           income: totalIncome,
           expense: totalExpense,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         const _QuickActions(),
+        const SizedBox(height: 12),
+        const _AiInsightsBanner(),
         const SizedBox(height: 20),
         _MiniStatistics(transactions: transactions),
         const SizedBox(height: 20),
@@ -106,8 +108,8 @@ class _HomeContent extends StatelessWidget {
   }
 }
 
-class _BalanceCard extends StatelessWidget {
-  const _BalanceCard({
+class _BalanceHero extends StatelessWidget {
+  const _BalanceHero({
     required this.balance,
     required this.income,
     required this.expense,
@@ -119,93 +121,170 @@ class _BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppColors.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Tổng số dư',
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: AppColors.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                formatVnd(balance),
-                style: AppTextStyles.displayCurrency.copyWith(
-                  color: AppColors.onPrimaryContainer,
-                ),
-              ),
-            ],
-          ),
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryContainer,
+            AppColors.primary,
+            AppColors.tertiary,
+          ],
         ),
-        const SizedBox(height: 12),
-        Row(
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.28),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
           children: [
-            Expanded(
-              child: _SummaryCard(
-                label: 'Thu nhập',
-                amount: income,
-                icon: Icons.arrow_downward_rounded,
-                color: AppColors.secondary,
+            Positioned(
+              right: -28,
+              top: -36,
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _SummaryCard(
-                label: 'Chi tiêu',
-                amount: expense,
-                icon: Icons.arrow_upward_rounded,
-                color: AppColors.error,
+            Positioned(
+              right: 28,
+              bottom: -48,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tổng số dư',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.onPrimaryContainer.withValues(
+                        alpha: 0.9,
+                      ),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    formatVnd(balance),
+                    style: AppTextStyles.displayCurrency.copyWith(
+                      color: Colors.white,
+                      fontSize: 34,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _HeroMetric(
+                            label: 'Thu nhập',
+                            amount: income,
+                            icon: Icons.north_east_rounded,
+                            accent: const Color(0xFF86EFAC),
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 36,
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        Expanded(
+                          child: _HeroMetric(
+                            label: 'Chi tiêu',
+                            amount: expense,
+                            icon: Icons.south_west_rounded,
+                            accent: const Color(0xFFFCA5A5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({
     required this.label,
     required this.amount,
     required this.icon,
-    required this.color,
+    required this.accent,
   });
 
   final String label;
   final int amount;
   final IconData icon;
-  final Color color;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return _SoftCard(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
-          CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(icon, color: color),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: accent),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTextStyles.labelMedium),
+                Text(
+                  label,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: Colors.white.withValues(alpha: 0.78),
+                  ),
+                ),
                 Text(
                   formatVnd(amount),
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleMedium.copyWith(color: color),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -228,52 +307,50 @@ class _QuickActions extends StatelessWidget {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return GridView.count(
-          crossAxisCount: constraints.maxWidth >= 520 ? 5 : 4,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 0.82,
-          children: [
-            _QuickActionButton(
-              label: 'Thêm thu',
-              icon: Icons.add_circle_outline_rounded,
-              color: AppColors.secondary,
-              onTap: () => openAddTransaction(AddTransactionType.income),
+    final actions = [
+      (
+        label: 'Thêm thu',
+        icon: Icons.add_rounded,
+        color: AppColors.income,
+        onTap: () => openAddTransaction(AddTransactionType.income),
+      ),
+      (
+        label: 'Thêm chi',
+        icon: Icons.remove_rounded,
+        color: AppColors.expense,
+        onTap: () => openAddTransaction(AddTransactionType.expense),
+      ),
+      (
+        label: 'Đổi tiền',
+        icon: Icons.currency_exchange_rounded,
+        color: AppColors.primary,
+        onTap: () =>
+            Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
+      ),
+      (
+        label: 'Ngân sách',
+        icon: Icons.pie_chart_outline_rounded,
+        color: AppColors.tertiary,
+        onTap: () =>
+            Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
+      ),
+    ];
+
+    return _SoftCard(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+      child: Row(
+        children: [
+          for (final action in actions)
+            Expanded(
+              child: _QuickActionButton(
+                label: action.label,
+                icon: action.icon,
+                color: action.color,
+                onTap: action.onTap,
+              ),
             ),
-            _QuickActionButton(
-              label: 'Thêm chi',
-              icon: Icons.remove_circle_outline_rounded,
-              color: AppColors.error,
-              onTap: () => openAddTransaction(AddTransactionType.expense),
-            ),
-            _QuickActionButton(
-              label: 'Đổi tiền',
-              icon: Icons.currency_exchange_rounded,
-              color: AppColors.primary,
-              onTap: () =>
-                  Navigator.of(context).pushNamed(AppRoutes.currencyConverter),
-            ),
-            _QuickActionButton(
-              label: 'Ngân sách',
-              icon: Icons.pie_chart_outline_rounded,
-              color: AppColors.tertiary,
-              onTap: () =>
-                  Navigator.of(context).pushNamed(AppRoutes.budgetManagement),
-            ),
-            _QuickActionButton(
-              label: 'AI',
-              icon: Icons.auto_awesome_rounded,
-              color: const Color(0xFF7C3AED),
-              onTap: () =>
-                  Navigator.of(context).pushNamed(AppRoutes.aiInsights),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 }
@@ -293,21 +370,105 @@ class _QuickActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _SoftCard(
-      padding: const EdgeInsets.all(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            CircleAvatar(
-              backgroundColor: color.withValues(alpha: 0.12),
-              child: Icon(icon, color: color),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color, size: 24),
             ),
             const SizedBox(height: 8),
-            FittedBox(child: Text(label, style: AppTextStyles.labelMedium)),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiInsightsBanner extends StatelessWidget {
+  const _AiInsightsBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.of(context).pushNamed(AppRoutes.aiInsights),
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                AppColors.primary.withValues(alpha: 0.10),
+                AppColors.secondaryContainer.withValues(alpha: 0.35),
+              ],
+            ),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.16),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppColors.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Gợi ý thông minh',
+                      style: AppTextStyles.titleMedium.copyWith(fontSize: 16),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Xem phân tích chi tiêu bằng AI',
+                      style: AppTextStyles.labelMedium,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: AppColors.primary,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -354,131 +515,105 @@ class _MiniStatistics extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Thống kê 7 ngày',
-                  style: AppTextStyles.titleMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Thống kê 7 ngày',
+                      style: AppTextStyles.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Thu nhập và chi tiêu gần đây',
+                      style: AppTextStyles.labelMedium,
+                    ),
+                  ],
                 ),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pushNamed(AppRoutes.statistics);
                 },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 child: const Text('Chi tiết'),
               ),
             ],
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 172,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const axisWidth = 34.0;
-                const axisGap = 6.0;
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: axisWidth,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 4, bottom: 26),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            for (final tick in yTicks.reversed)
-                              Text(
-                                _formatChartAxisValue(tick),
-                                style: AppTextStyles.labelMedium.copyWith(
-                                  fontSize: 9,
-                                  color: AppColors.onSurfaceVariant,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+            height: 168,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 34,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 26),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (final tick in yTicks.reversed)
+                          Text(
+                            _formatChartAxisValue(tick),
+                            style: AppTextStyles.labelMedium.copyWith(
+                              fontSize: 9,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
                     ),
-                    const SizedBox(width: axisGap),
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Padding(
-                              padding: const EdgeInsets.only(
-                                top: 4,
-                                bottom: 26,
-                              ),
-                              child: Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  for (final _ in yTicks)
-                                    Container(
-                                      height: 1,
-                                      color: AppColors.outlineVariant
-                                          .withValues(alpha: 0.45),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 0,
-                            top: 4,
-                            bottom: 26,
-                            child: Container(
-                              width: 1.2,
-                              color: AppColors.outlineVariant,
-                            ),
-                          ),
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 26,
-                            child: Container(
-                              height: 1.2,
-                              color: AppColors.outlineVariant,
-                            ),
-                          ),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 26),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              for (final day in days)
-                                Expanded(
-                                  child: _ChartColumn(
-                                    day: day,
-                                    maxValue: axisMaxValue,
+                              for (final _ in yTicks)
+                                Container(
+                                  height: 1,
+                                  color: AppColors.outlineVariant.withValues(
+                                    alpha: 0.35,
                                   ),
                                 ),
                             ],
                           ),
+                        ),
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          for (final day in days)
+                            Expanded(
+                              child: _ChartColumn(
+                                day: day,
+                                maxValue: axisMaxValue,
+                              ),
+                            ),
                         ],
                       ),
-                    ),
-                  ],
-                );
-              },
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _MiniLegendItem(color: AppColors.secondary, label: 'Thu nhập'),
-              const SizedBox(width: 14),
-              _MiniLegendItem(color: AppColors.error, label: 'Chi tiêu'),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _AxisHint(
-                label: 'Trục X: ngày',
-                icon: Icons.calendar_today_rounded,
-              ),
-              const SizedBox(width: 8),
-              _AxisHint(label: 'Trục Y: VND', icon: Icons.payments_outlined),
+              _MiniLegendItem(color: AppColors.income, label: 'Thu nhập'),
+              const SizedBox(width: 16),
+              _MiniLegendItem(color: AppColors.expense, label: 'Chi tiêu'),
             ],
           ),
         ],
@@ -518,44 +653,6 @@ class _MiniLegendItem extends StatelessWidget {
   }
 }
 
-class _AxisHint extends StatelessWidget {
-  const _AxisHint({required this.label, required this.icon});
-
-  final String label;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Flexible(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: AppColors.primary),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: AppColors.primary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _RecentTransactions extends StatelessWidget {
   const _RecentTransactions({required this.transactions});
 
@@ -577,6 +674,10 @@ class _RecentTransactions extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).pushNamed(AppRoutes.transactions);
               },
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
               child: const Text('Xem tất cả'),
             ),
           ],
@@ -586,12 +687,38 @@ class _RecentTransactions extends StatelessWidget {
           padding: EdgeInsets.zero,
           child: transactions.isEmpty
               ? Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    'Chưa có giao dịch. Hãy thêm khoản thu hoặc chi đầu tiên.',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurfaceVariant,
-                    ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 28,
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Icon(
+                          Icons.receipt_long_outlined,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Chưa có giao dịch',
+                        style: AppTextStyles.titleMedium.copyWith(fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Thêm khoản thu hoặc chi đầu tiên để bắt đầu.',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 )
               : Column(
@@ -672,7 +799,7 @@ class _TransactionTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.end,
                 style: AppTextStyles.titleMedium.copyWith(
-                  color: isIncome ? AppColors.secondary : AppColors.error,
+                  color: isIncome ? AppColors.income : AppColors.expense,
                 ),
               ),
             ),
@@ -711,7 +838,7 @@ class _ChartColumn extends StatelessWidget {
                 child: Container(
                   width: 10,
                   decoration: BoxDecoration(
-                    color: AppColors.secondary,
+                    color: AppColors.income,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
@@ -725,7 +852,7 @@ class _ChartColumn extends StatelessWidget {
                 child: Container(
                   width: 10,
                   decoration: BoxDecoration(
-                    color: AppColors.error,
+                    color: AppColors.expense,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
@@ -860,10 +987,17 @@ class _SoftCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.20),
+          color: AppColors.outlineVariant.withValues(alpha: 0.16),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: child,
     );

@@ -185,6 +185,10 @@ class FirestoreRepository {
     return _notifications.add(notification.toCreateMap());
   }
 
+  Future<void> deleteNotification(String notificationId) {
+    return _notifications.doc(notificationId).delete();
+  }
+
   Future<void> deleteAllNotifications() async {
     final snapshot = await _notifications.get();
     if (snapshot.docs.isEmpty) return;
@@ -193,6 +197,32 @@ class FirestoreRepository {
     var operationCount = 0;
     for (final doc in snapshot.docs) {
       batch.delete(doc.reference);
+      operationCount++;
+      if (operationCount == 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        operationCount = 0;
+      }
+    }
+
+    if (operationCount > 0) {
+      await batch.commit();
+    }
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    final snapshot = await _notifications
+        .where('isRead', isEqualTo: false)
+        .get();
+    if (snapshot.docs.isEmpty) return;
+
+    var batch = _firestore.batch();
+    var operationCount = 0;
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
       operationCount++;
       if (operationCount == 450) {
         await batch.commit();

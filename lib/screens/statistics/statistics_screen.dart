@@ -82,11 +82,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                           final profile = snapshot.data;
 
                           return ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
                             children: [
-                              _TimeFilterSection(
+                              _PeriodToolbar(
                                 selectedPeriod: _selectedPeriod,
                                 periodLabel: _periodLabel,
+                                isExportingPdf: _isExportingPdf,
                                 onPeriodChanged: (period) {
                                   setState(() => _selectedPeriod = period);
                                 },
@@ -96,11 +97,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                 onNext: () => setState(() {
                                   _anchorDate = _shiftAnchor(1);
                                 }),
-                              ),
-                              const SizedBox(height: 12),
-                              _ExportPdfButton(
-                                isLoading: _isExportingPdf,
-                                onPressed: () => _exportPdfReport(
+                                onExportPdf: () => _exportPdfReport(
                                   profile: profile,
                                   transactions: transactions,
                                   stats: stats,
@@ -108,15 +105,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                   categories: categories,
                                 ),
                               ),
-                              const SizedBox(height: 24),
-                              _SummaryGrid(stats: stats),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 14),
+                              _OverviewHero(stats: stats),
+                              const SizedBox(height: 14),
                               _ChartsSection(
                                 bars: bars,
                                 categories: categories,
                                 totalExpense: stats.expense,
+                                hasData: transactions.isNotEmpty,
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 14),
                               _TopSpendingCard(
                                 categories: categories,
                                 totalExpense: stats.expense,
@@ -328,119 +326,120 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 }
 
-class _ExportPdfButton extends StatelessWidget {
-  const _ExportPdfButton({required this.isLoading, required this.onPressed});
-
-  final bool isLoading;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 46,
-      child: FilledButton.icon(
-        onPressed: isLoading ? null : onPressed,
-        icon: isLoading
-            ? const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.picture_as_pdf_rounded),
-        label: Text(isLoading ? 'Đang tạo PDF...' : 'Xuất PDF thống kê'),
-      ),
-    );
-  }
-}
-
-class _TimeFilterSection extends StatelessWidget {
-  const _TimeFilterSection({
+class _PeriodToolbar extends StatelessWidget {
+  const _PeriodToolbar({
     required this.selectedPeriod,
     required this.periodLabel,
+    required this.isExportingPdf,
     required this.onPeriodChanged,
     required this.onPrevious,
     required this.onNext,
+    required this.onExportPdf,
   });
 
   final _Period selectedPeriod;
   final String periodLabel;
+  final bool isExportingPdf;
   final ValueChanged<_Period> onPeriodChanged;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final VoidCallback onExportPdf;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+    return _SoftCard(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+      child: Column(
+        children: [
+          Row(
             children: [
-              _PeriodPill(
-                label: 'Tuần',
-                selected: selectedPeriod == _Period.week,
-                onTap: () => onPeriodChanged(_Period.week),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final period in _Period.values)
+                        Expanded(
+                          child: _PeriodPill(
+                            label: switch (period) {
+                              _Period.week => 'Tuần',
+                              _Period.month => 'Tháng',
+                              _Period.year => 'Năm',
+                            },
+                            selected: selectedPeriod == period,
+                            onTap: () => onPeriodChanged(period),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-              _PeriodPill(
-                label: 'Tháng',
-                selected: selectedPeriod == _Period.month,
-                onTap: () => onPeriodChanged(_Period.month),
-              ),
-              _PeriodPill(
-                label: 'Năm',
-                selected: selectedPeriod == _Period.year,
-                onTap: () => onPeriodChanged(_Period.year),
+              const SizedBox(width: 8),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: isExportingPdf ? null : onExportPdf,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Ink(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryFixed.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: isExportingPdf
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: AppColors.primary,
+                          ),
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          width: 320,
-          constraints: const BoxConstraints(maxWidth: double.infinity),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
+          const SizedBox(height: 10),
+          Row(
             children: [
               IconButton(
                 tooltip: 'Kỳ trước',
                 onPressed: onPrevious,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.chevron_left_rounded),
-                color: AppColors.onSurfaceVariant,
+                color: AppColors.primary,
               ),
               Expanded(
                 child: Text(
                   periodLabel,
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleMedium,
+                  style: AppTextStyles.titleMedium.copyWith(fontSize: 16),
                 ),
               ),
               IconButton(
                 tooltip: 'Kỳ sau',
                 onPressed: onNext,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.chevron_right_rounded),
-                color: AppColors.onSurfaceVariant,
+                color: AppColors.primary,
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -460,30 +459,23 @@ class _PeriodPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 9),
         decoration: BoxDecoration(
           color: selected ? AppColors.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
+          borderRadius: BorderRadius.circular(10),
         ),
+        alignment: Alignment.center,
         child: Text(
           label,
           style: AppTextStyles.labelMedium.copyWith(
             color: selected
                 ? AppColors.onPrimaryContainer
                 : AppColors.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ),
@@ -491,98 +483,176 @@ class _PeriodPill extends StatelessWidget {
   }
 }
 
-class _SummaryGrid extends StatelessWidget {
-  const _SummaryGrid({required this.stats});
+class _OverviewHero extends StatelessWidget {
+  const _OverviewHero({required this.stats});
 
   final _Stats stats;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 720;
-        return GridView.count(
-          crossAxisCount: isWide ? 4 : 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: isWide ? 1.7 : 1.55,
+    final isPositive = stats.savings >= 0;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryContainer,
+            AppColors.primary,
+            AppColors.tertiary,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.26),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
           children: [
-            _MetricCard(
-              label: 'Tổng thu nhập',
-              amount: formatVnd(stats.income),
-              icon: Icons.arrow_downward_rounded,
-              color: AppColors.secondary,
+            Positioned(
+              right: -28,
+              top: -36,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
             ),
-            _MetricCard(
-              label: 'Tổng chi tiêu',
-              amount: formatVnd(stats.expense),
-              icon: Icons.arrow_upward_rounded,
-              color: AppColors.error,
-            ),
-            _MetricCard(
-              label: 'Tiền tiết kiệm',
-              amount: formatVnd(stats.savings),
-              icon: Icons.savings_outlined,
-              color: AppColors.primary,
-            ),
-            _MetricCard(
-              label: 'Tỷ lệ tiết kiệm',
-              amount: '${stats.savingsRate.toStringAsFixed(1)}%',
-              icon: Icons.percent_rounded,
-              color: AppColors.tertiary,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Số dư kỳ này',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    formatVnd(stats.savings),
+                    style: AppTextStyles.displayCurrency.copyWith(
+                      color: Colors.white,
+                      fontSize: 32,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isPositive
+                        ? 'Tiết kiệm ${stats.savingsRate.toStringAsFixed(1)}% thu nhập'
+                        : 'Chi vượt thu trong kỳ này',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: Colors.white.withValues(alpha: 0.78),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _HeroMetric(
+                            label: 'Thu nhập',
+                            amount: stats.income,
+                            icon: Icons.north_east_rounded,
+                            accent: const Color(0xFF86EFAC),
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 36,
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        Expanded(
+                          child: _HeroMetric(
+                            label: 'Chi tiêu',
+                            amount: stats.expense,
+                            icon: Icons.south_west_rounded,
+                            accent: const Color(0xFFFCA5A5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({
     required this.label,
     required this.amount,
     required this.icon,
-    required this.color,
+    required this.accent,
   });
 
   final String label;
-  final String amount;
+  final int amount;
   final IconData icon;
-  final Color color;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return _SoftCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 16, color: accent),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   label,
-                  overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.onSurfaceVariant,
+                    color: Colors.white.withValues(alpha: 0.75),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              amount,
-              style: AppTextStyles.titleMedium.copyWith(color: color),
+                Text(
+                  formatVnd(amount),
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -596,19 +666,21 @@ class _ChartsSection extends StatelessWidget {
     required this.bars,
     required this.categories,
     required this.totalExpense,
+    required this.hasData,
   });
 
   final List<_BarPoint> bars;
   final List<_CategoryStat> categories;
   final int totalExpense;
+  final bool hasData;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 720;
-        final barChart = _IncomeExpenseChart(bars: bars);
-        final lineChart = _BalanceLineChart(bars: bars);
+        final barChart = _IncomeExpenseChart(bars: bars, hasData: hasData);
+        final lineChart = _BalanceLineChart(bars: bars, hasData: hasData);
         final donutChart = _CategoryDonutCard(
           categories: categories,
           totalExpense: totalExpense,
@@ -618,9 +690,9 @@ class _ChartsSection extends StatelessWidget {
           return Column(
             children: [
               barChart,
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               lineChart,
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               donutChart,
             ],
           );
@@ -632,11 +704,11 @@ class _ChartsSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(child: barChart),
-                const SizedBox(width: 24),
+                const SizedBox(width: 16),
                 Expanded(child: donutChart),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             lineChart,
           ],
         );
@@ -646,9 +718,10 @@ class _ChartsSection extends StatelessWidget {
 }
 
 class _IncomeExpenseChart extends StatefulWidget {
-  const _IncomeExpenseChart({required this.bars});
+  const _IncomeExpenseChart({required this.bars, required this.hasData});
 
   final List<_BarPoint> bars;
+  final bool hasData;
 
   @override
   State<_IncomeExpenseChart> createState() => _IncomeExpenseChartState();
@@ -677,8 +750,18 @@ class _IncomeExpenseChartState extends State<_IncomeExpenseChart> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Thu nhập vs Chi tiêu', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'So sánh theo kỳ đã chọn',
+            style: AppTextStyles.labelMedium,
+          ),
           const SizedBox(height: 16),
-          LayoutBuilder(
+          if (!widget.hasData)
+            const _ChartEmptyState(
+              message: 'Chưa có giao dịch trong kỳ này để vẽ biểu đồ.',
+            )
+          else
+            LayoutBuilder(
             builder: (context, constraints) {
               const axisWidth = 42.0;
               const axisGap = 8.0;
@@ -695,7 +778,7 @@ class _IncomeExpenseChartState extends State<_IncomeExpenseChart> {
                 padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -757,19 +840,10 @@ class _IncomeExpenseChartState extends State<_IncomeExpenseChart> {
                                             Container(
                                               height: 1,
                                               color: AppColors.outlineVariant
-                                                  .withValues(alpha: 0.45),
+                                                  .withValues(alpha: 0.35),
                                             ),
                                         ],
                                       ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    left: 0,
-                                    top: 4,
-                                    bottom: 28,
-                                    child: Container(
-                                      width: 1.2,
-                                      color: AppColors.outlineVariant,
                                     ),
                                   ),
                                   Row(
@@ -796,15 +870,17 @@ class _IncomeExpenseChartState extends State<_IncomeExpenseChart> {
               );
             },
           ),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _LegendItem(color: AppColors.secondary, label: 'Thu nhập'),
-              const SizedBox(width: 18),
-              _LegendItem(color: AppColors.error, label: 'Chi tiêu'),
-            ],
-          ),
+          if (widget.hasData) ...[
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _LegendItem(color: AppColors.income, label: 'Thu nhập'),
+                const SizedBox(width: 18),
+                _LegendItem(color: AppColors.expense, label: 'Chi tiêu'),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -835,7 +911,7 @@ class _BarGroup extends StatelessWidget {
                 child: Container(
                   width: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.secondary,
+                    color: AppColors.income,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
@@ -849,7 +925,7 @@ class _BarGroup extends StatelessWidget {
                 child: Container(
                   width: 12,
                   decoration: BoxDecoration(
-                    color: AppColors.error,
+                    color: AppColors.expense,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                     ),
@@ -876,9 +952,10 @@ class _BarGroup extends StatelessWidget {
 }
 
 class _BalanceLineChart extends StatefulWidget {
-  const _BalanceLineChart({required this.bars});
+  const _BalanceLineChart({required this.bars, required this.hasData});
 
   final List<_BarPoint> bars;
+  final bool hasData;
 
   @override
   State<_BalanceLineChart> createState() => _BalanceLineChartState();
@@ -905,8 +982,18 @@ class _BalanceLineChartState extends State<_BalanceLineChart> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Xu hướng số dư', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Theo dõi biến động qua kỳ',
+            style: AppTextStyles.labelMedium,
+          ),
           const SizedBox(height: 16),
-          LayoutBuilder(
+          if (!widget.hasData)
+            const _ChartEmptyState(
+              message: 'Thêm giao dịch để xem xu hướng số dư.',
+            )
+          else
+            LayoutBuilder(
             builder: (context, constraints) {
               const axisWidth = 42.0;
               const axisGap = 8.0;
@@ -1048,10 +1135,12 @@ class _BalanceLineChartState extends State<_BalanceLineChart> {
               );
             },
           ),
-          const SizedBox(height: 14),
-          Center(
-            child: _LegendItem(color: AppColors.primary, label: 'Số dư'),
-          ),
+          if (widget.hasData) ...[
+            const SizedBox(height: 14),
+            Center(
+              child: _LegendItem(color: AppColors.primary, label: 'Số dư'),
+            ),
+          ],
         ],
       ),
     );
@@ -1169,6 +1258,10 @@ class _TopSpendingCard extends StatelessWidget {
                     ),
                   );
                 },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 child: const Text('Xem tất cả'),
               ),
             ],
@@ -1376,6 +1469,39 @@ class _NavItem extends StatelessWidget {
   }
 }
 
+class _ChartEmptyState extends StatelessWidget {
+  const _ChartEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.insert_chart_outlined_rounded,
+            size: 36,
+            color: AppColors.onSurfaceVariant,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.labelMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SoftCard extends StatelessWidget {
   const _SoftCard({
     required this.child,
@@ -1389,15 +1515,19 @@ class _SoftCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
+      clipBehavior: Clip.antiAlias,
       padding: padding,
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.14),
+        ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),

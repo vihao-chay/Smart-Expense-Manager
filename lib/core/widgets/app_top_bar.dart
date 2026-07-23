@@ -6,6 +6,7 @@ import '../../data/models/app_user_profile.dart';
 import '../../data/repositories/firestore_repository.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import 'app_avatar.dart';
 
 class AppTopBar extends StatelessWidget {
   AppTopBar({super.key, required this.profile});
@@ -24,15 +25,10 @@ class AppTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          CircleAvatar(
+          AppAvatar(
+            name: name,
+            avatarUrl: profile?.avatarUrl,
             radius: 20,
-            backgroundColor: AppColors.surfaceContainerHigh,
-            backgroundImage: profile?.avatarUrl == null
-                ? null
-                : NetworkImage(profile!.avatarUrl!),
-            child: profile?.avatarUrl == null
-                ? const Icon(Icons.person_rounded)
-                : null,
           ),
           const SizedBox(width: 10),
           Expanded(

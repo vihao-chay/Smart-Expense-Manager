@@ -4,6 +4,7 @@ import '../../app/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/theme_controller.dart';
+import '../../core/widgets/app_avatar.dart';
 import '../../core/widgets/app_top_bar.dart';
 import '../../data/models/app_user_profile.dart';
 import '../../data/models/user_settings.dart';
@@ -37,53 +38,57 @@ class ProfileScreen extends StatelessWidget {
                         AppTopBar(profile: profile),
                         Expanded(
                           child: ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                             children: [
                               _ProfileHeader(profile: profile),
                               const SizedBox(height: 16),
-                              _MenuTile(
-                                icon: Icons.edit_outlined,
-                                title: 'Chỉnh sửa hồ sơ',
-                                subtitle: 'Cập nhật tên và ảnh đại diện',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.editProfile);
-                                },
+                              _MenuSection(
+                                children: [
+                                  _MenuTile(
+                                    icon: Icons.edit_outlined,
+                                    title: 'Chỉnh sửa hồ sơ',
+                                    subtitle: 'Cập nhật tên và ảnh đại diện',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.editProfile);
+                                    },
+                                  ),
+                                  _ThemeModeTile(repository: repository),
+                                  _MenuTile(
+                                    icon: Icons.settings_outlined,
+                                    title: 'Cài đặt',
+                                    subtitle: 'Thông báo, ngôn ngữ và tiền tệ',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.settings);
+                                    },
+                                  ),
+                                  _MenuTile(
+                                    icon: Icons.picture_as_pdf_outlined,
+                                    title: 'Tài liệu PDF',
+                                    subtitle: 'Xem báo cáo PDF đã xuất',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.documents);
+                                    },
+                                  ),
+                                  _MenuTile(
+                                    icon: Icons.bug_report_outlined,
+                                    title: 'Báo cáo lỗi',
+                                    subtitle: 'Gửi lỗi app cho admin xử lý',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.bugReport);
+                                    },
+                                    showDivider: false,
+                                  ),
+                                ],
                               ),
-                              _ThemeModeTile(repository: repository),
-                              const SizedBox(height: 10),
-                              _MenuTile(
-                                icon: Icons.settings_outlined,
-                                title: 'Cài đặt',
-                                subtitle: 'Thông báo, ngôn ngữ và tiền tệ',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.settings);
-                                },
-                              ),
-                              _MenuTile(
-                                icon: Icons.picture_as_pdf_outlined,
-                                title: 'Tài liệu PDF',
-                                subtitle: 'Xem báo cáo PDF đã xuất',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.documents);
-                                },
-                              ),
-                              _MenuTile(
-                                icon: Icons.bug_report_outlined,
-                                title: 'Báo cáo lỗi',
-                                subtitle: 'Gửi lỗi app cho admin xử lý',
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.bugReport);
-                                },
-                              ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               const _LogoutButton(),
                             ],
                           ),
@@ -116,42 +121,124 @@ class _ProfileHeader extends StatelessWidget {
         : 'Chưa có email';
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryContainer,
+            AppColors.primary,
+            AppColors.tertiary,
+          ],
         ),
-      ),
-      child: Column(
-        children: [
-          CircleAvatar(
-            radius: 42,
-            backgroundColor: AppColors.secondaryContainer,
-            backgroundImage: profile?.avatarUrl == null
-                ? null
-                : NetworkImage(profile!.avatarUrl!),
-            child: profile?.avatarUrl == null
-                ? const Icon(Icons.person_rounded, size: 42)
-                : null,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            email,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.28),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -24,
+              top: -30,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            Positioned(
+              left: -20,
+              bottom: -36,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        width: 2,
+                      ),
+                    ),
+                    child: AppAvatar(
+                      name: name,
+                      avatarUrl: profile?.avatarUrl,
+                      radius: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.titleMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    email,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: Colors.white.withValues(alpha: 0.82),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuSection extends StatelessWidget {
+  const _MenuSection({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.14),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: children),
     );
   }
 }
@@ -225,36 +312,41 @@ class _SwitchMenuTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.20),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.outlineVariant.withValues(alpha: 0.16),
           ),
         ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.surfaceContainer,
-              child: Icon(icon, color: AppColors.primary),
+      ),
+      child: Row(
+        children: [
+          _MenuIcon(icon: icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(subtitle, style: AppTextStyles.labelMedium),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: AppTextStyles.titleMedium),
-                  Text(subtitle, style: AppTextStyles.labelMedium),
-                ],
-              ),
-            ),
-            Switch(value: value, onChanged: onChanged),
-          ],
-        ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: AppColors.onPrimaryContainer,
+            activeTrackColor: AppColors.primaryContainer,
+          ),
+        ],
       ),
     );
   }
@@ -266,53 +358,78 @@ class _MenuTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.showDivider = true,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Ink(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppColors.outlineVariant.withValues(alpha: 0.20),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            border: showDivider
+                ? Border(
+                    bottom: BorderSide(
+                      color: AppColors.outlineVariant.withValues(alpha: 0.16),
+                    ),
+                  )
+                : null,
+          ),
+          child: Row(
+            children: [
+              _MenuIcon(icon: icon),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: AppTextStyles.labelMedium),
+                  ],
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: AppColors.surfaceContainer,
-                  child: Icon(icon, color: AppColors.primary),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: AppTextStyles.titleMedium),
-                      Text(subtitle, style: AppTextStyles.labelMedium),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded),
-              ],
-            ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MenuIcon extends StatelessWidget {
+  const _MenuIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(icon, color: AppColors.primary, size: 22),
     );
   }
 }
@@ -349,17 +466,27 @@ class _LogoutButtonState extends State<_LogoutButton> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48,
+      height: 52,
       child: OutlinedButton.icon(
         onPressed: _isLoading ? null : _logout,
         icon: _isLoading
-            ? const SizedBox.square(
+            ? SizedBox.square(
                 dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: AppColors.expense,
+                ),
               )
             : const Icon(Icons.logout_rounded),
         label: const Text('Đăng xuất'),
-        style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.expense,
+          side: BorderSide(color: AppColors.expense.withValues(alpha: 0.45)),
+          backgroundColor: AppColors.expense.withValues(alpha: 0.06),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
       ),
     );
   }
@@ -406,7 +533,7 @@ class _ProfileBottomNavBar extends StatelessWidget {
                     ).pushReplacementNamed(AppRoutes.statistics);
                   },
                 ),
-                _NavItem(
+                const _NavItem(
                   label: 'Cá nhân',
                   icon: Icons.person_rounded,
                   selected: true,

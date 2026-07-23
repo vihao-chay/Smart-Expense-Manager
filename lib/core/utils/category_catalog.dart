@@ -53,8 +53,8 @@ const incomeCategories = [
   CategoryMeta(
     label: 'Lương',
     icon: Icons.payments_outlined,
-    color: Color(0xFF059669),
-    backgroundColor: Color(0xFFD1FAE5),
+    color: Color(0xFF0F766E),
+    backgroundColor: Color(0xFFCCFBF1),
   ),
   CategoryMeta(
     label: 'Thưởng',
@@ -65,20 +65,20 @@ const incomeCategories = [
   CategoryMeta(
     label: 'Đầu tư',
     icon: Icons.trending_up_rounded,
-    color: Color(0xFF4F46E5),
-    backgroundColor: Color(0xFFE0E7FF),
+    color: Color(0xFF0F766E),
+    backgroundColor: Color(0xFFCCFBF1),
   ),
   CategoryMeta(
     label: 'Bán hàng',
     icon: Icons.storefront_outlined,
-    color: Color(0xFF0891B2),
-    backgroundColor: Color(0xFFCFFAFE),
+    color: Color(0xFF0F766E),
+    backgroundColor: Color(0xFFCCFBF1),
   ),
   CategoryMeta(
     label: 'Khác',
     icon: Icons.more_horiz_rounded,
-    color: Color(0xFF64748B),
-    backgroundColor: Color(0xFFE2E8F0),
+    color: Color(0xFF0F766E),
+    backgroundColor: Color(0xFFCCFBF1),
   ),
 ];
 
