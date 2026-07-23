@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   ExternalLink,
+  Eye,
   FileText,
   Lock,
   LogOut,
@@ -17,9 +18,11 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
+  Unlock,
   UserCog,
   Users,
   Wallet,
+  X,
 } from 'lucide-react';
 import {
   onAuthStateChanged,
@@ -332,8 +335,8 @@ function AdminDashboard({ adminProfile, onSignOut }) {
   }, []);
 
   const appUsers = useMemo(
-    () => usersData.filter((user) => user.role !== 'admin'),
-    [usersData],
+    () => usersData.filter((user) => user.role !== 'admin' && user.id !== adminProfile?.id),
+    [usersData, adminProfile?.id],
   );
 
   const filteredUsers = useMemo(() => {
@@ -583,54 +586,16 @@ function AdminDashboard({ adminProfile, onSignOut }) {
             )}
 
             {activeView === 'users' && (
-              <section id="users" className="users-layout">
-              <Panel title="Người dùng">
-                <div className="search-box">
-                  <Search size={18} />
-                  <input
-                    value={queryText}
-                    onChange={(event) => setQueryText(event.target.value)}
-                    placeholder="Tìm theo tên, email, UID..."
-                  />
-                </div>
-                <div className="user-list">
-                  {filteredUsers.map((user) => (
-                    <button
-                      key={user.id}
-                      className={[
-                        'user-row',
-                        user.id === selectedUser?.id ? 'selected' : '',
-                        user.status === 'locked' ? 'locked' : '',
-                      ].join(' ')}
-                      onClick={() => setSelectedUserId(user.id)}
-                    >
-                      <Avatar user={user} />
-                      <span>
-                        <strong>{user.fullName || 'Chưa đặt tên'}</strong>
-                        <small>{user.email || user.id}</small>
-                      </span>
-                      <Badge tone={user.status === 'locked' ? 'danger' : 'muted'}>
-                        {user.status || 'active'}
-                      </Badge>
-                    </button>
-                  ))}
-                </div>
-              </Panel>
-
-              <Panel title="Chi tiết user">
-                {selectedUser ? (
-                  <UserDetail
-                    user={selectedUser}
-                    report={userReport}
-                    transactions={selectedTransactions}
-                    budgets={selectedBudgets}
-                    onUpdateUser={updateUser}
-                  />
-                ) : (
-                  <p className="empty-text">Chưa có user nào.</p>
-                )}
-              </Panel>
-              </section>
+              <UserTableView
+                users={filteredUsers}
+                queryText={queryText}
+                onQueryChange={setQueryText}
+                transactions={transactions}
+                budgets={budgets}
+                onUpdateUser={updateUser}
+                onError={setError}
+                campaigns={campaigns}
+              />
             )}
 
             {activeView === 'documents' && (
@@ -958,27 +923,42 @@ function CampaignManager({ users, campaigns, onError }) {
 }
 
 function AccountStatus({ summary }) {
+  const total = summary.active + summary.locked;
+  const activePercent = total > 0 ? Math.round((summary.active / total) * 100) : 0;
+  const lockedPercent = total > 0 ? Math.round((summary.locked / total) * 100) : 0;
   return (
     <div className="status-grid">
       <div className="status-card">
         <CheckCircle2 size={22} />
-        <span>Active</span>
+        <span>Đang hoạt động</span>
         <strong>{summary.active}</strong>
+        <div className="status-bar-track">
+          <div className="status-bar-fill active-fill" style={{ width: `${activePercent}%` }} />
+        </div>
+        <small className="status-pct">{activePercent}% tổng user</small>
       </div>
       <div className="status-card warning">
         <Lock size={22} />
-        <span>Locked</span>
+        <span>Đã khóa</span>
         <strong>{summary.locked}</strong>
+        <div className="status-bar-track">
+          <div className="status-bar-fill locked-fill" style={{ width: `${lockedPercent}%` }} />
+        </div>
+        <small className="status-pct">{lockedPercent}% tổng user</small>
       </div>
       <div className="status-card info">
         <UserCog size={22} />
-        <span>Admin</span>
+        <span>Quản trị viên</span>
         <strong>{summary.admins}</strong>
       </div>
       <div className="status-card muted">
         <ShieldCheck size={22} />
-        <span>Onboarded</span>
+        <span>Đã onboarding</span>
         <strong>{summary.onboarded}</strong>
+        <div className="status-bar-track">
+          <div className="status-bar-fill onboard-fill" style={{ width: `${total > 0 ? Math.round((summary.onboarded / total) * 100) : 0}%` }} />
+        </div>
+        <small className="status-pct">{total > 0 ? Math.round((summary.onboarded / total) * 100) : 0}% tổng user</small>
       </div>
     </div>
   );
@@ -1125,6 +1105,307 @@ function TopUsersTable({ users }) {
   );
 }
 
+function UserTableView({ users, queryText, onQueryChange, transactions, budgets, onUpdateUser, onError, campaigns }) {
+  const [detailUser, setDetailUser] = useState(null);
+  const [notifyUser, setNotifyUser] = useState(null);
+  const [savingId, setSavingId] = useState(null);
+
+  async function toggleLock(user) {
+    setSavingId(user.id);
+    try {
+      await onUpdateUser(user.id, { status: user.status === 'locked' ? 'active' : 'locked' });
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const detailTransactions = useMemo(
+    () => detailUser ? transactions.filter((t) => t.userId === detailUser.id) : [],
+    [transactions, detailUser?.id],
+  );
+  const detailBudgets = useMemo(
+    () => detailUser ? budgets.filter((b) => b.userId === detailUser.id) : [],
+    [budgets, detailUser?.id],
+  );
+
+  return (
+    <section id="users" className="users-table-section">
+      <div className="users-table-toolbar">
+        <div className="search-box">
+          <Search size={18} />
+          <input
+            value={queryText}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Tìm theo tên, email, UID..."
+          />
+        </div>
+        <span className="user-count-badge">{users.length} người dùng</span>
+      </div>
+
+      <div className="users-table-wrap">
+        <table className="users-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Người dùng</th>
+              <th>Email</th>
+              <th>Trạng thái</th>
+              <th>Ngày tạo</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={6} className="table-empty">Không tìm thấy người dùng nào.</td>
+              </tr>
+            )}
+            {users.map((user, index) => (
+              <tr key={user.id} className={user.status === 'locked' ? 'row-locked' : ''}>
+                <td className="col-index">{index + 1}</td>
+                <td className="col-user">
+                  <Avatar user={user} />
+                  <span>
+                    <strong>{user.fullName || 'Chưa đặt tên'}</strong>
+                    <small>{user.id}</small>
+                  </span>
+                </td>
+                <td className="col-email">{user.email || '—'}</td>
+                <td className="col-status">
+                  <Badge tone={user.status === 'locked' ? 'danger' : 'success'}>
+                    {user.status === 'locked' ? 'Đã khóa' : 'Hoạt động'}
+                  </Badge>
+                </td>
+                <td className="col-date">{user.createdAt ? formatDate(user.createdAt) : '—'}</td>
+                <td className="col-actions">
+                  <button
+                    className="tbl-action-btn view"
+                    title="Xem chi tiết"
+                    onClick={() => setDetailUser(user)}
+                  >
+                    <Eye size={16} />
+                  </button>
+                  <button
+                    className={`tbl-action-btn ${user.status === 'locked' ? 'unlock' : 'lock'}`}
+                    title={user.status === 'locked' ? 'Mở khóa' : 'Khóa tài khoản'}
+                    disabled={savingId === user.id}
+                    onClick={() => toggleLock(user)}
+                  >
+                    {user.status === 'locked' ? <Unlock size={16} /> : <Lock size={16} />}
+                  </button>
+                  <button
+                    className="tbl-action-btn notify"
+                    title="Gửi thông báo"
+                    onClick={() => setNotifyUser(user)}
+                  >
+                    <Bell size={16} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {detailUser && (
+        <UserDetailModal
+          user={detailUser}
+          transactions={detailTransactions}
+          budgets={detailBudgets}
+          onUpdateUser={onUpdateUser}
+          onClose={() => setDetailUser(null)}
+        />
+      )}
+
+      {notifyUser && (
+        <SendNotificationModal
+          user={notifyUser}
+          onClose={() => setNotifyUser(null)}
+          onError={onError}
+        />
+      )}
+    </section>
+  );
+}
+
+function UserDetailModal({ user, transactions, budgets, onUpdateUser, onClose }) {
+  const [saving, setSaving] = useState(false);
+  const report = useMemo(() => buildReport(transactions, 1), [transactions]);
+
+  async function handleUpdate(updates) {
+    setSaving(true);
+    try {
+      await onUpdateUser(user.id, updates);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Chi tiết người dùng</h2>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        <div className="modal-body">
+          <div className="profile-strip">
+            <Avatar user={user} large />
+            <div>
+              <h2>{user.fullName || 'Chưa đặt tên'}</h2>
+              <p>{user.email || '—'}</p>
+              <small>UID: {user.id}</small>
+            </div>
+            <Badge tone={user.status === 'locked' ? 'danger' : 'success'}>
+              {user.status === 'locked' ? 'Đã khóa' : 'Hoạt động'}
+            </Badge>
+          </div>
+
+          <div className="mini-metrics">
+            <MiniMetric label="Thu" value={formatVnd(report.income)} />
+            <MiniMetric label="Chi" value={formatVnd(report.expense)} />
+            <MiniMetric label="Số dư" value={formatVnd(report.balance)} />
+            <MiniMetric label="Giao dịch" value={transactions.length} />
+          </div>
+
+          <div className="detail-actions">
+            <label>
+              Trạng thái tài khoản
+              <select
+                value={user.status || 'active'}
+                disabled={saving}
+                onChange={(event) => handleUpdate({ status: event.target.value })}
+              >
+                <option value="active">Hoạt động</option>
+                <option value="locked">Đã khóa</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="split-list">
+            <div>
+              <h3>Giao dịch gần đây</h3>
+              <div className="transaction-list">
+                {transactions.slice(0, 8).map((item) => (
+                  <div key={item.id} className="transaction-row">
+                    <span>
+                      <strong>{item.title || item.category}</strong>
+                      <small>{item.category} • {formatDate(item.transactionDate)}</small>
+                    </span>
+                    <strong className={item.type === 'income' ? 'income' : 'expense'}>
+                      {item.type === 'income' ? '+' : '-'}{formatVnd(item.amount)}
+                    </strong>
+                  </div>
+                ))}
+                {transactions.length === 0 && (
+                  <p className="empty-text">Người dùng này chưa có giao dịch.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <h3>Ngân sách</h3>
+              <div className="budget-list">
+                {budgets.map((budget) => (
+                  <div key={budget.id} className="budget-row">
+                    <span>{budget.category}</span>
+                    <strong>{formatVnd(budget.limitAmount)}</strong>
+                  </div>
+                ))}
+                {budgets.length === 0 && (
+                  <p className="empty-text">Chưa đặt ngân sách.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SendNotificationModal({ user, onClose, onError }) {
+  const [form, setForm] = useState({ title: '', body: '' });
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSend(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const callable = httpsCallable(functions, 'sendNotificationCampaign');
+      await callable({
+        title: form.title.trim(),
+        body: form.body.trim(),
+        type: 'campaign',
+        targetType: 'selected',
+        targetUserIds: [user.id],
+      });
+      setSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (err) {
+      onError(firestoreMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card modal-card--sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Gửi thông báo</h2>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="notify-user-target">
+            <Avatar user={user} />
+            <span>
+              <strong>{user.fullName || 'Chưa đặt tên'}</strong>
+              <small>{user.email || user.id}</small>
+            </span>
+          </div>
+
+          {success ? (
+            <div className="notify-success">
+              <CheckCircle2 size={40} />
+              <p>Đã gửi thông báo thành công!</p>
+            </div>
+          ) : (
+            <form className="admin-form" onSubmit={handleSend}>
+              <label>
+                Tiêu đề
+                <input
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="Nhập tiêu đề thông báo..."
+                  required
+                />
+              </label>
+              <label>
+                Nội dung
+                <textarea
+                  value={form.body}
+                  onChange={(e) => setForm({ ...form, body: e.target.value })}
+                  placeholder="Nhập nội dung thông báo..."
+                  required
+                  rows={4}
+                />
+              </label>
+              <button className="primary-button" disabled={loading} type="submit">
+                <Send size={16} />
+                {loading ? 'Đang gửi...' : 'Gửi thông báo'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserDetail({ user, report, transactions, budgets, onUpdateUser }) {
   const [saving, setSaving] = useState(false);
 
@@ -1156,8 +1437,8 @@ function UserDetail({ user, report, transactions, budgets, onUpdateUser }) {
             disabled={saving}
             onChange={(event) => handleUpdate({ status: event.target.value })}
           >
-            <option value="active">active</option>
-            <option value="locked">locked</option>
+            <option value="active">Hoạt động</option>
+            <option value="locked">Đã khóa</option>
           </select>
         </label>
       </div>
@@ -1243,6 +1524,7 @@ function Panel({ title, children }) {
 }
 
 function BarReport({ items }) {
+  const [hoveredBar, setHoveredBar] = useState(null);
   const width = Math.max(720, items.length * 72 + 116);
   const height = 320;
   const padding = { top: 24, right: 24, bottom: 46, left: 92 };
@@ -1251,16 +1533,32 @@ function BarReport({ items }) {
   const max = Math.max(...items.map((item) => Math.max(item.income, item.expense)), 1);
   const ticks = buildAxisTicks(0, max, 4);
   const groupWidth = plotWidth / items.length;
-  const barWidth = Math.min(28, groupWidth / 3.2);
+  const barWidth = Math.min(30, groupWidth / 3);
 
   return (
     <div className="axis-chart-wrap">
+      <div className="chart-legend-row">
+        <span className="chart-legend-dot income-dot" />
+        <span className="chart-legend-label">Thu nhập</span>
+        <span className="chart-legend-dot expense-dot" />
+        <span className="chart-legend-label">Chi tiêu</span>
+      </div>
       <svg
         className="axis-chart bar-axis-chart"
         style={{ width: `${width}px` }}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
       >
+        <defs>
+          <linearGradient id="incomeGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#00c49a" />
+            <stop offset="100%" stopColor="#00796b" />
+          </linearGradient>
+          <linearGradient id="expenseGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#ff6b6b" />
+            <stop offset="100%" stopColor="#d43d3d" />
+          </linearGradient>
+        </defs>
         {ticks.map((tick) => {
           const y = padding.top + plotHeight - (tick / max) * plotHeight;
           return (
@@ -1271,6 +1569,7 @@ function BarReport({ items }) {
                 y1={y}
                 y2={y}
                 className="chart-grid-line"
+                strokeDasharray={tick === 0 ? '0' : '4 4'}
               />
               <text x={padding.left - 12} y={y + 4} textAnchor="end">
                 {formatAxisVnd(tick)}
@@ -1298,15 +1597,32 @@ function BarReport({ items }) {
           const x = padding.left + index * groupWidth + groupWidth / 2;
           const incomeHeight = Math.max((item.income / max) * plotHeight, item.income > 0 ? 3 : 0);
           const expenseHeight = Math.max((item.expense / max) * plotHeight, item.expense > 0 ? 3 : 0);
+          const isHovered = hoveredBar === item.key;
           return (
-            <g key={item.key}>
+            <g
+              key={item.key}
+              onMouseEnter={() => setHoveredBar(item.key)}
+              onMouseLeave={() => setHoveredBar(null)}
+              style={{ cursor: 'pointer' }}
+            >
+              {isHovered && (
+                <rect
+                  x={x - barWidth - 10}
+                  y={padding.top}
+                  width={barWidth * 2 + 26}
+                  height={plotHeight}
+                  rx="6"
+                  fill="rgba(0,121,107,0.06)"
+                />
+              )}
               <rect
                 x={x - barWidth - 3}
                 y={height - padding.bottom - incomeHeight}
                 width={barWidth}
                 height={incomeHeight}
-                rx="6"
-                className="income-bar-svg"
+                rx="5"
+                fill="url(#incomeGrad)"
+                opacity={isHovered ? 1 : 0.88}
               >
                 <title>{`${item.label} - Thu: ${formatVnd(item.income)}`}</title>
               </rect>
@@ -1315,22 +1631,38 @@ function BarReport({ items }) {
                 y={height - padding.bottom - expenseHeight}
                 width={barWidth}
                 height={expenseHeight}
-                rx="6"
-                className="expense-bar-svg"
+                rx="5"
+                fill="url(#expenseGrad)"
+                opacity={isHovered ? 1 : 0.88}
               >
                 <title>{`${item.label} - Chi: ${formatVnd(item.expense)}`}</title>
               </rect>
-              <text x={x} y={height - 16} textAnchor="middle">
+              <text x={x} y={height - 16} textAnchor="middle" fontWeight={isHovered ? '900' : '700'}>
                 {item.label}
               </text>
+              {isHovered && (
+                <g>
+                  <rect
+                    x={x - 56}
+                    y={padding.top - 4}
+                    width={112}
+                    height={44}
+                    rx="6"
+                    fill="#0b4039"
+                    opacity="0.92"
+                  />
+                  <text x={x} y={padding.top + 13} textAnchor="middle" fill="#a8ded4" fontSize="11" fontWeight="700">
+                    Thu: {formatAxisVnd(item.income)}
+                  </text>
+                  <text x={x} y={padding.top + 29} textAnchor="middle" fill="#ffb3b3" fontSize="11" fontWeight="700">
+                    Chi: {formatAxisVnd(item.expense)}
+                  </text>
+                </g>
+              )}
             </g>
           );
         })}
       </svg>
-      <div className="chart-axis-caption">
-        <span>Trục X: tháng</span>
-        <span>Trục Y: giá trị VND</span>
-      </div>
     </div>
   );
 }
@@ -1530,6 +1862,7 @@ function Avatar({ user, large = false }) {
 function Badge({ children, tone = 'muted' }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
+
 
 function FullPageState({ title, compact = false }) {
   return (
