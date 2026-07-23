@@ -30,6 +30,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _titleController = TextEditingController();
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
+  final _amountFocus = FocusNode();
   final _repository = FirestoreRepository();
 
   var _type = AppTransactionType.expense;
@@ -39,6 +40,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   var _isSaving = false;
 
   List<CategoryMeta> get _categories => categoriesForType(_type);
+
+  bool get _isIncome => _type == AppTransactionType.income;
 
   @override
   void didChangeDependencies() {
@@ -60,6 +63,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _titleController.dispose();
     _amountController.dispose();
     _noteController.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -136,11 +140,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _isIncome ? AppColors.primary : AppColors.expense;
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Đóng',
@@ -151,29 +158,36 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         title: Text(
           'Thêm giao dịch',
           style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.primary,
+            color: AppColors.onSurface,
           ),
         ),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: SizedBox(
             height: 52,
             child: FilledButton(
               onPressed: _isSaving ? null : _save,
               style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
+                backgroundColor: AppColors.primaryContainer,
+                foregroundColor: AppColors.onPrimaryContainer,
+                disabledBackgroundColor: AppColors.primaryContainer.withValues(
+                  alpha: 0.55,
+                ),
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
               child: _isSaving
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  ? SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: AppColors.onPrimaryContainer,
+                      ),
                     )
                   : const Text('Lưu giao dịch'),
             ),
@@ -188,47 +202,56 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             child: Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  4,
+                  16,
+                  16 + MediaQuery.viewInsetsOf(context).bottom,
+                ),
                 children: [
                   _TypeSegment(type: _type, onChanged: _setType),
                   const SizedBox(height: 20),
-                  _TextFieldCard(
+                  _AmountField(
                     controller: _amountController,
-                    label: 'Số tiền',
-                    hint: '0',
-                    icon: Icons.payments_outlined,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    focusNode: _amountFocus,
+                    accent: accent,
                     validator: (value) {
                       final amount = int.tryParse(value ?? '') ?? 0;
-                      if (amount <= 0) return 'Vui lòng nhập số tiền hợp lệ';
+                      if (amount <= 0) return 'Nhập số tiền hợp lệ';
                       return null;
                     },
                   ),
-                  const SizedBox(height: 12),
-                  _TextFieldCard(
-                    controller: _titleController,
-                    label: 'Tên giao dịch',
-                    hint: 'Ví dụ: Ăn trưa, Lương tháng này',
-                    icon: Icons.edit_note_rounded,
-                  ),
                   const SizedBox(height: 20),
-                  _CategoryPicker(
+                  _FieldLabel('Danh mục'),
+                  const SizedBox(height: 8),
+                  _CategoryScroller(
                     categories: _categories,
                     selectedCategory: _selectedCategory,
+                    accent: accent,
                     onSelected: (value) {
                       setState(() => _selectedCategory = value);
                     },
                   ),
-                  const SizedBox(height: 12),
-                  _DateCard(date: _selectedDate, onTap: _pickDate),
-                  const SizedBox(height: 12),
-                  _TextFieldCard(
-                    controller: _noteController,
-                    label: 'Ghi chú',
-                    hint: 'Ghi chú thêm...',
-                    icon: Icons.notes_rounded,
-                    maxLines: 3,
+                  const SizedBox(height: 16),
+                  _DetailCard(
+                    children: [
+                      _SoftInput(
+                        controller: _titleController,
+                        hint: 'Tên giao dịch (tuỳ chọn)',
+                        icon: Icons.edit_note_rounded,
+                      ),
+                      const SizedBox(height: 10),
+                      _DateRow(date: _selectedDate, onTap: _pickDate),
+                      const SizedBox(height: 10),
+                      _SoftInput(
+                        controller: _noteController,
+                        hint: 'Ghi chú (tuỳ chọn)',
+                        icon: Icons.notes_rounded,
+                        maxLines: 2,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -249,21 +272,25 @@ class _TypeSegment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           _TypeButton(
             label: 'Chi tiêu',
+            icon: Icons.south_west_rounded,
             selected: type == AppTransactionType.expense,
+            selectedColor: AppColors.expense,
             onTap: () => onChanged(AppTransactionType.expense),
           ),
           _TypeButton(
             label: 'Thu nhập',
+            icon: Icons.north_east_rounded,
             selected: type == AppTransactionType.income,
+            selectedColor: AppColors.primaryContainer,
             onTap: () => onChanged(AppTransactionType.income),
           ),
         ],
@@ -275,12 +302,16 @@ class _TypeSegment extends StatelessWidget {
 class _TypeButton extends StatelessWidget {
   const _TypeButton({
     required this.label,
+    required this.icon,
     required this.selected,
+    required this.selectedColor,
     required this.onTap,
   });
 
   final String label;
+  final IconData icon;
   final bool selected;
+  final Color selectedColor;
   final VoidCallback onTap;
 
   @override
@@ -288,22 +319,32 @@ class _TypeButton extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(11),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(vertical: 11),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? AppColors.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: selected ? selectedColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: selected
-                  ? AppColors.onPrimary
-                  : AppColors.onSurfaceVariant,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : AppColors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: selected ? Colors.white : AppColors.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -311,64 +352,235 @@ class _TypeButton extends StatelessWidget {
   }
 }
 
-class _CategoryPicker extends StatelessWidget {
-  const _CategoryPicker({
-    required this.categories,
-    required this.selectedCategory,
-    required this.onSelected,
+class _AmountField extends StatelessWidget {
+  const _AmountField({
+    required this.controller,
+    required this.focusNode,
+    required this.accent,
+    required this.validator,
   });
 
-  final List<CategoryMeta> categories;
-  final String selectedCategory;
-  final ValueChanged<String> onSelected;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final Color accent;
+  final String? Function(String?) validator;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Danh mục',
+          'Số tiền',
           style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final category in categories)
-              ChoiceChip(
-                selected: selectedCategory == category.label,
-                label: Text(category.label),
-                avatar: Icon(category.icon, size: 18),
-                onSelected: (_) => onSelected(category.label),
-              ),
-          ],
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          validator: validator,
+          style: AppTextStyles.displayCurrency.copyWith(
+            fontSize: 40,
+            height: 1.1,
+            color: accent,
+          ),
+          decoration: InputDecoration(
+            hintText: '0',
+            hintStyle: AppTextStyles.displayCurrency.copyWith(
+              fontSize: 40,
+              height: 1.1,
+              color: accent.withValues(alpha: 0.28),
+            ),
+            suffixText: 'đ',
+            suffixStyle: AppTextStyles.titleMedium.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w700,
+            ),
+            border: InputBorder.none,
+            errorStyle: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.error,
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          ),
+        ),
+        Container(
+          height: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 48),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
       ],
     );
   }
 }
 
-class _DateCard extends StatelessWidget {
-  const _DateCard({required this.date, required this.onTap});
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: AppTextStyles.labelMedium.copyWith(fontWeight: FontWeight.w600),
+    );
+  }
+}
+
+class _CategoryScroller extends StatelessWidget {
+  const _CategoryScroller({
+    required this.categories,
+    required this.selectedCategory,
+    required this.accent,
+    required this.onSelected,
+  });
+
+  final List<CategoryMeta> categories;
+  final String selectedCategory;
+  final Color accent;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final category = categories[index];
+          final selected = selectedCategory == category.label;
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => onSelected(category.label),
+              borderRadius: BorderRadius.circular(999),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? accent.withValues(alpha: 0.12)
+                      : AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selected
+                        ? accent.withValues(alpha: 0.5)
+                        : AppColors.outlineVariant.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      category.icon,
+                      size: 16,
+                      color: selected ? accent : AppColors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      category.label,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: selected ? accent : AppColors.onSurface,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DetailCard extends StatelessWidget {
+  const _DetailCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.14),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _DateRow extends StatelessWidget {
+  const _DateRow({required this.date, required this.onTap});
 
   final DateTime date;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return _InputCard(
-      icon: Icons.calendar_today_outlined,
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          child: Text(
-            '${formatShortDate(date)}, ${date.day}/${date.month}/${date.year}',
-            style: AppTextStyles.bodyLarge,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.calendar_today_outlined,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${formatShortDate(date)}, ${date.day}/${date.month}/${date.year}',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),
@@ -376,92 +588,54 @@ class _DateCard extends StatelessWidget {
   }
 }
 
-class _TextFieldCard extends StatelessWidget {
-  const _TextFieldCard({
+class _SoftInput extends StatelessWidget {
+  const _SoftInput({
     required this.controller,
-    required this.label,
     required this.hint,
     required this.icon,
-    this.keyboardType,
-    this.inputFormatters,
-    this.validator,
     this.maxLines = 1,
   });
 
   final TextEditingController controller;
-  final String label;
   final String hint;
   final IconData icon;
-  final TextInputType? keyboardType;
-  final List<TextInputFormatter>? inputFormatters;
-  final String? Function(String?)? validator;
   final int maxLines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _InputCard(
-          icon: icon,
-          alignTop: maxLines > 1,
-          child: TextFormField(
-            controller: controller,
-            keyboardType: keyboardType,
-            inputFormatters: inputFormatters,
-            validator: validator,
-            maxLines: maxLines,
-            decoration: InputDecoration(
-              hintText: hint,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 15),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _InputCard extends StatelessWidget {
-  const _InputCard({
-    required this.icon,
-    required this.child,
-    this.alignTop = false,
-  });
-
-  final IconData icon;
-  final Widget child;
-  final bool alignTop;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
+        color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.35),
-        ),
       ),
       child: Row(
-        crossAxisAlignment: alignTop
+        crossAxisAlignment: maxLines > 1
             ? CrossAxisAlignment.start
             : CrossAxisAlignment.center,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, alignTop ? 14 : 0, 12, 0),
-            child: Icon(icon, color: AppColors.onSurfaceVariant),
+            padding: EdgeInsets.fromLTRB(12, maxLines > 1 ? 12 : 0, 6, 0),
+            child: Icon(icon, color: AppColors.onSurfaceVariant, size: 20),
           ),
-          Expanded(child: child),
-          const SizedBox(width: 16),
+          Expanded(
+            child: TextFormField(
+              controller: controller,
+              maxLines: maxLines,
+              style: AppTextStyles.bodyMedium,
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
     );

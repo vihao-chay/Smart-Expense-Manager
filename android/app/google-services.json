@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "620730155211-qvja6e3c98he9iu1t9tiuh84t9aqbmht.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.smart_expense_manager",
+            "certificate_hash": "c051491b71294fb0878c8157f82d4299be7a97d2"
+          }
+        },
+        {
           "client_id": "620730155211-dpv7g0fe7hdjpjlfenfs5kqa2sa603g4.apps.googleusercontent.com",
           "client_type": 3
         }

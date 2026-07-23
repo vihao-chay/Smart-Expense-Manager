@@ -17,23 +17,26 @@ class BudgetManagementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repository = FirestoreRepository();
-    final key = monthKey(DateTime.now());
+    final now = DateTime.now();
+    final key = monthKey(now);
 
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Quay lại',
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_rounded),
+          color: AppColors.onSurfaceVariant,
         ),
         title: Text(
           'Quản lý ngân sách',
           style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.primary,
+            color: AppColors.onSurface,
           ),
         ),
       ),
@@ -76,6 +79,7 @@ class BudgetManagementScreen extends StatelessWidget {
                     return _BudgetBody(
                       repository: repository,
                       periodKey: key,
+                      monthLabel: 'Tháng ${now.month}/${now.year}',
                       budgets: budgets,
                       transactions: transactions,
                     );
@@ -94,12 +98,14 @@ class _BudgetBody extends StatelessWidget {
   const _BudgetBody({
     required this.repository,
     required this.periodKey,
+    required this.monthLabel,
     required this.budgets,
     required this.transactions,
   });
 
   final FirestoreRepository repository;
   final String periodKey;
+  final String monthLabel;
   final List<AppBudget> budgets;
   final List<AppTransaction> transactions;
 
@@ -123,64 +129,277 @@ class _BudgetBody extends StatelessWidget {
       0,
       (sum, budget) => sum + budget.limitAmount,
     );
-    final totalSpent = spentByCategory.values.fold<int>(0, (a, b) => a + b);
+    final trackedSpent = budgets.fold<int>(0, (sum, budget) {
+      return sum + (spentByCategory[budget.category] ?? 0);
+    });
+    final allSpent = spentByCategory.values.fold<int>(0, (a, b) => a + b);
+    final setCount = budgets.length;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
-        _SummaryCard(totalLimit: totalLimit, totalSpent: totalSpent),
-        const SizedBox(height: 20),
-        for (final category in expenseCategories) ...[
-          _BudgetCategoryCard(
-            repository: repository,
-            periodKey: periodKey,
-            category: category,
-            budget: budgets
-                .where((budget) => budget.category == category.label)
-                .firstOrNull,
-            spent: spentByCategory[category.label] ?? 0,
+        _SummaryCard(
+          monthLabel: monthLabel,
+          totalLimit: totalLimit,
+          trackedSpent: trackedSpent,
+          allSpent: allSpent,
+          setCount: setCount,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Hạn mức theo danh mục',
+          style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Bấm vào danh mục để đặt hoặc sửa hạn mức tháng.',
+          style: AppTextStyles.labelMedium,
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-        ],
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < expenseCategories.length; i++)
+                _BudgetCategoryTile(
+                  repository: repository,
+                  periodKey: periodKey,
+                  category: expenseCategories[i],
+                  budget: budgets
+                      .where(
+                        (budget) =>
+                            budget.category == expenseCategories[i].label,
+                      )
+                      .firstOrNull,
+                  spent: spentByCategory[expenseCategories[i].label] ?? 0,
+                  showDivider: i != expenseCategories.length - 1,
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.totalLimit, required this.totalSpent});
+  const _SummaryCard({
+    required this.monthLabel,
+    required this.totalLimit,
+    required this.trackedSpent,
+    required this.allSpent,
+    required this.setCount,
+  });
 
+  final String monthLabel;
   final int totalLimit;
-  final int totalSpent;
+  final int trackedSpent;
+  final int allSpent;
+  final int setCount;
 
   @override
   Widget build(BuildContext context) {
-    final percent = totalLimit <= 0 ? 0.0 : totalSpent / totalLimit;
-    return _SoftCard(
+    final hasBudget = totalLimit > 0;
+    final progress = hasBudget ? trackedSpent / totalLimit : 0.0;
+    final over = progress > 1;
+    final remaining = totalLimit - trackedSpent;
+    final percentLabel = (progress * 100).clamp(0, 999).toStringAsFixed(0);
+    final barValue = _visibleProgress(progress, trackedSpent > 0);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryContainer.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ngân sách tháng này', style: AppTextStyles.titleMedium),
-          const SizedBox(height: 12),
-          Text(
-            '${formatVnd(totalSpent)} / ${formatVnd(totalLimit)}',
-            style: AppTextStyles.displayCurrency.copyWith(
-              color: percent > 1 ? AppColors.error : AppColors.primary,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ngân sách tháng này',
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$monthLabel · $setCount danh mục đã đặt',
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.onPrimaryContainer.withValues(
+                          alpha: 0.85,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  hasBudget
+                      ? (over ? 'Vượt mức' : 'Đã dùng $percentLabel%')
+                      : 'Chưa đặt',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 18),
+          if (!hasBudget) ...[
+            Text(
+              'Chưa có tổng ngân sách',
+              style: AppTextStyles.headlineLargeMobile.copyWith(
+                color: AppColors.onPrimaryContainer,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Đặt hạn mức từng danh mục bên dưới. Tổng sẽ cộng tự động.',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onPrimaryContainer.withValues(alpha: 0.85),
+                height: 1.35,
+              ),
+            ),
+            if (allSpent > 0) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Đã chi tháng này: ${formatVnd(allSpent)}',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: const Color(0xFFFCA5A5),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ] else ...[
+            Text(
+              over ? 'Đã vượt' : 'Còn lại',
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.onPrimaryContainer.withValues(alpha: 0.8),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              formatVnd(over ? trackedSpent - totalLimit : remaining),
+              style: AppTextStyles.displayCurrency.copyWith(
+                color: over
+                    ? const Color(0xFFFCA5A5)
+                    : AppColors.onPrimaryContainer,
+                fontSize: 32,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _HeroMetric(
+                    label: 'Đã chi',
+                    value: formatVnd(trackedSpent),
+                    accent: const Color(0xFFFCA5A5),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _HeroMetric(
+                    label: 'Tổng hạn mức',
+                    value: formatVnd(totalLimit),
+                    accent: const Color(0xFF86EFAC),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: barValue,
+                backgroundColor: Colors.white.withValues(alpha: 0.18),
+                color: over
+                    ? const Color(0xFFFCA5A5)
+                    : AppColors.onPrimaryContainer,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(
-            'Đã chi / Tổng ngân sách',
+            label,
             style: AppTextStyles.labelMedium.copyWith(
-              color: AppColors.onSurfaceVariant,
+              color: AppColors.onPrimaryContainer.withValues(alpha: 0.8),
             ),
           ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: percent.clamp(0, 1),
-            minHeight: 10,
-            color: percent > 1 ? AppColors.error : AppColors.secondary,
-            backgroundColor: AppColors.surfaceContainerHighest,
+          Text(
+            value,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
@@ -188,13 +407,14 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _BudgetCategoryCard extends StatelessWidget {
-  const _BudgetCategoryCard({
+class _BudgetCategoryTile extends StatelessWidget {
+  const _BudgetCategoryTile({
     required this.repository,
     required this.periodKey,
     required this.category,
     required this.budget,
     required this.spent,
+    required this.showDivider,
   });
 
   final FirestoreRepository repository;
@@ -202,59 +422,203 @@ class _BudgetCategoryCard extends StatelessWidget {
   final CategoryMeta category;
   final AppBudget? budget;
   final int spent;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
     final limit = budget?.limitAmount ?? 0;
-    final percent = limit <= 0 ? 0.0 : spent / limit;
+    final hasLimit = limit > 0;
+    final progress = hasLimit ? spent / limit : 0.0;
+    final over = progress > 1;
+    final near = progress >= 0.8 && !over;
+    final remaining = limit - spent;
+    final barValue = _visibleProgress(progress, spent > 0 && hasLimit);
+    final statusColor = !hasLimit
+        ? AppColors.onSurfaceVariant
+        : over
+        ? AppColors.expense
+        : near
+        ? const Color(0xFFD97706)
+        : AppColors.primary;
+    final statusText = !hasLimit
+        ? 'Chưa đặt'
+        : over
+        ? 'Vượt mức'
+        : near
+        ? 'Sắp hết'
+        : 'An toàn';
 
-    return _SoftCard(
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: category.backgroundColor,
-            child: Icon(category.icon, color: category.color),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showBudgetSheet(context),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+          decoration: BoxDecoration(
+            border: showDivider
+                ? Border(
+                    bottom: BorderSide(
+                      color: AppColors.outlineVariant.withValues(alpha: 0.16),
+                    ),
+                  )
+                : null,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(category.label, style: AppTextStyles.titleMedium),
-                const SizedBox(height: 4),
-                Text(
-                  limit == 0
-                      ? 'Chưa đặt ngân sách'
-                      : '${formatVnd(spent)} / ${formatVnd(limit)}',
-                  style: AppTextStyles.labelMedium,
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: category.backgroundColor,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: percent.clamp(0, 1),
-                  color: percent > 1 ? AppColors.error : category.color,
-                  backgroundColor: AppColors.surfaceContainerHighest,
+                child: Icon(category.icon, color: category.color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            category.label,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            statusText,
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: statusColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (!hasLimit)
+                      Text(
+                        spent > 0
+                            ? 'Đã chi ${formatVnd(spent)} · bấm để đặt hạn mức'
+                            : 'Bấm để đặt hạn mức tháng',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      )
+                    else ...[
+                      Text(
+                        '${formatVnd(spent)} / ${formatVnd(limit)}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        over
+                            ? 'Vượt ${formatVnd(spent - limit)}'
+                            : 'Còn ${formatVnd(remaining)}',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 6,
+                          value: barValue,
+                          backgroundColor: AppColors.surfaceContainerHigh,
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+              IconButton(
+                tooltip: hasLimit ? 'Sửa hạn mức' : 'Đặt hạn mức',
+                onPressed: () => _showBudgetSheet(context),
+                icon: Icon(
+                  hasLimit ? Icons.edit_outlined : Icons.add_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              if (budget != null)
+                IconButton(
+                  tooltip: 'Xóa ngân sách',
+                  onPressed: () => _confirmDelete(context),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  color: AppColors.expense,
+                ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Đặt ngân sách',
-            onPressed: () => _showBudgetSheet(context),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          if (budget != null)
-            IconButton(
-              tooltip: 'Xóa ngân sách',
-              onPressed: () async {
-                await repository.deleteBudget(budget!.id);
-              },
-              icon: const Icon(Icons.delete_outline),
-              color: AppColors.error,
-            ),
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final budget = this.budget;
+    if (budget == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surfaceContainerLowest,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text('Xóa ngân sách?'),
+          content: Text(
+            'Gỡ hạn mức “${category.label}” tháng này.',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.expense,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Xóa'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await repository.deleteBudget(budget.id);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(firebaseAuthErrorMessage(error))));
+    }
   }
 
   Future<void> _showBudgetSheet(BuildContext context) async {
@@ -262,9 +626,15 @@ class _BudgetCategoryCard extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surfaceContainerLowest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
       builder: (context) => _BudgetInputSheet(
         category: category.label,
+        categoryMeta: category,
         initialAmount: budget?.limitAmount,
+        spent: spent,
       ),
     );
 
@@ -298,9 +668,16 @@ class _BudgetCategoryCard extends StatelessWidget {
 }
 
 class _BudgetInputSheet extends StatefulWidget {
-  const _BudgetInputSheet({required this.category, this.initialAmount});
+  const _BudgetInputSheet({
+    required this.category,
+    required this.categoryMeta,
+    required this.spent,
+    this.initialAmount,
+  });
 
   final String category;
+  final CategoryMeta categoryMeta;
+  final int spent;
   final int? initialAmount;
 
   @override
@@ -339,7 +716,7 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        top: 16,
+        top: 12,
         bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
       ),
       child: Form(
@@ -348,20 +725,88 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Đặt ngân sách ${widget.category}',
-              style: AppTextStyles.titleMedium,
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: widget.categoryMeta.backgroundColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    widget.categoryMeta.icon,
+                    color: widget.categoryMeta.color,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hạn mức ${widget.category}',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        widget.spent > 0
+                            ? 'Đã chi tháng này: ${formatVnd(widget.spent)}'
+                            : 'Chưa có chi tiêu danh mục này',
+                        style: AppTextStyles.labelMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Số tiền hạn mức',
+              style: AppTextStyles.labelMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
             TextFormField(
               controller: _controller,
               autofocus: true,
               keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Số tiền',
-                suffixText: 'VND',
-                border: OutlineInputBorder(),
+              style: AppTextStyles.displayCurrency.copyWith(
+                fontSize: 34,
+                color: AppColors.primary,
+                height: 1.1,
+              ),
+              decoration: InputDecoration(
+                hintText: '0',
+                hintStyle: AppTextStyles.displayCurrency.copyWith(
+                  fontSize: 34,
+                  color: AppColors.primary.withValues(alpha: 0.28),
+                  height: 1.1,
+                ),
+                suffixText: 'đ',
+                suffixStyle: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+                border: InputBorder.none,
+                errorStyle: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.error,
+                ),
               ),
               validator: (value) {
                 final amount = int.tryParse(value ?? '') ?? 0;
@@ -370,12 +815,29 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
               },
               onFieldSubmitted: (_) => _submit(),
             ),
-            const SizedBox(height: 16),
+            Container(
+              height: 2,
+              margin: const EdgeInsets.symmetric(horizontal: 48),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
+              height: 52,
               child: FilledButton(
                 onPressed: _submit,
-                child: const Text('Lưu ngân sách'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryContainer,
+                  foregroundColor: AppColors.onPrimaryContainer,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text('Lưu hạn mức'),
               ),
             ),
           ],
@@ -385,24 +847,9 @@ class _BudgetInputSheetState extends State<_BudgetInputSheet> {
   }
 }
 
-class _SoftCard extends StatelessWidget {
-  const _SoftCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.20),
-        ),
-      ),
-      child: child,
-    );
-  }
+/// Keep a tiny visible fill when there is spend but ratio is near 0.
+double _visibleProgress(double progress, bool hasSpend) {
+  if (!hasSpend || progress <= 0) return 0;
+  if (progress >= 1) return 1;
+  return progress < 0.04 ? 0.04 : progress;
 }

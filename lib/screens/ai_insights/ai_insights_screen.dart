@@ -22,11 +22,14 @@ class _AiInsightsScreenState extends State<AiInsightsScreen> {
   final _aiService = GeminiAiService();
 
   Future<_InsightResult>? _insightsFuture;
+  var _isGenerating = false;
 
   void _generateInsights(
     List<AppTransaction> transactions,
     List<AppBudget> budgets,
   ) {
+    if (_isGenerating) return;
+
     final prompt = _buildExpensePrompt(transactions, budgets);
     final fallback = _buildLocalInsight(transactions, budgets);
     final primaryPrompt = _buildRewritePrompt(
@@ -38,12 +41,19 @@ class _AiInsightsScreenState extends State<AiInsightsScreen> {
       originalPrompt: _buildExpensePrompt(transactions, budgets, strict: true),
       strict: true,
     );
+    final future = _generateGeminiFirst(
+      prompt: primaryPrompt,
+      retryPrompt: retryPrompt,
+      fallback: fallback,
+    );
+
     setState(() {
-      _insightsFuture = _generateGeminiFirst(
-        prompt: primaryPrompt,
-        retryPrompt: retryPrompt,
-        fallback: fallback,
-      );
+      _isGenerating = true;
+      _insightsFuture = future;
+    });
+
+    future.whenComplete(() {
+      if (mounted) setState(() => _isGenerating = false);
     });
   }
 
@@ -117,16 +127,18 @@ class _AiInsightsScreenState extends State<AiInsightsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Quay lại',
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_rounded),
+          color: AppColors.onSurfaceVariant,
         ),
         title: Text(
           'AI phân tích',
           style: AppTextStyles.headlineLargeMobile.copyWith(
-            color: AppColors.primary,
+            color: AppColors.onSurface,
           ),
         ),
       ),
@@ -173,6 +185,7 @@ class _AiInsightsScreenState extends State<AiInsightsScreen> {
                       transactions: transactions,
                       budgets: budgets,
                       insightsFuture: _insightsFuture,
+                      isGenerating: _isGenerating,
                       onGenerate: () =>
                           _generateInsights(transactions, budgets),
                     );
@@ -192,21 +205,33 @@ class _AiInsightsBody extends StatelessWidget {
     required this.transactions,
     required this.budgets,
     required this.insightsFuture,
+    required this.isGenerating,
     required this.onGenerate,
   });
 
   final List<AppTransaction> transactions;
   final List<AppBudget> budgets;
   final Future<_InsightResult>? insightsFuture;
+  final bool isGenerating;
   final VoidCallback onGenerate;
 
   @override
   Widget build(BuildContext context) {
-    final totalIncome = _sumByType(transactions, AppTransactionType.income);
-    final totalExpense = _sumByType(transactions, AppTransactionType.expense);
-    final balance = totalIncome - totalExpense;
-    final categoryTotals = _expenseCategoryTotals(transactions);
-    final currentMonthKey = monthKey(DateTime.now());
+    final now = DateTime.now();
+    final currentMonthKey = monthKey(now);
+    final monthTransactions = transactions
+        .where((item) => monthKey(item.transactionDate) == currentMonthKey)
+        .toList();
+    final monthIncome = _sumByType(monthTransactions, AppTransactionType.income);
+    final monthExpense = _sumByType(
+      monthTransactions,
+      AppTransactionType.expense,
+    );
+    final monthBalance = monthIncome - monthExpense;
+    final savingsRate = monthIncome <= 0
+        ? 0.0
+        : (monthBalance / monthIncome * 100).clamp(0, 100);
+    final categoryTotals = _expenseCategoryTotals(monthTransactions);
     final currentBudgets = budgets
         .where((budget) => budget.periodKey == currentMonthKey)
         .toList();
@@ -224,36 +249,46 @@ class _AiInsightsBody extends StatelessWidget {
     );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
         _HeroCard(
-          totalIncome: totalIncome,
-          totalExpense: totalExpense,
-          balance: balance,
-          transactionCount: transactions.length,
+          monthLabel: 'Tháng ${now.month}/${now.year}',
+          totalIncome: monthIncome,
+          totalExpense: monthExpense,
+          balance: monthBalance,
+          savingsRate: savingsRate.toDouble(),
+          monthTransactionCount: monthTransactions.length,
+          allTransactionCount: transactions.length,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         _BudgetSummaryCard(
           totalBudget: totalBudget,
           spentThisMonth: spentThisMonth,
           budgetCount: currentBudgets.length,
         ),
-        const SizedBox(height: 16),
-        _CategorySummaryCard(categoryTotals: categoryTotals),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        _CategorySummaryCard(
+          categoryTotals: categoryTotals,
+          totalExpense: monthExpense,
+        ),
+        const SizedBox(height: 14),
         _GenerateCard(
-          canGenerate: transactions.isNotEmpty,
+          canGenerate: transactions.isNotEmpty && !isGenerating,
           hasTransactions: transactions.isNotEmpty,
+          isGenerating: isGenerating,
           onGenerate: onGenerate,
         ),
-        const SizedBox(height: 16),
-        if (insightsFuture != null) _InsightResultCard(future: insightsFuture!),
+        if (insightsFuture != null) ...[
+          const SizedBox(height: 14),
+          _InsightResultCard(future: insightsFuture!),
+        ],
         const SizedBox(height: 16),
         Text(
           'AI chỉ mang tính tham khảo, không thay thế tư vấn tài chính chuyên nghiệp.',
           textAlign: TextAlign.center,
           style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.onSurfaceVariant,
+            color: AppColors.outline,
+            fontSize: 11,
           ),
         ),
       ],
@@ -263,29 +298,52 @@ class _AiInsightsBody extends StatelessWidget {
 
 class _HeroCard extends StatelessWidget {
   const _HeroCard({
+    required this.monthLabel,
     required this.totalIncome,
     required this.totalExpense,
     required this.balance,
-    required this.transactionCount,
+    required this.savingsRate,
+    required this.monthTransactionCount,
+    required this.allTransactionCount,
   });
 
+  final String monthLabel;
   final int totalIncome;
   final int totalExpense;
   final int balance;
-  final int transactionCount;
+  final double savingsRate;
+  final int monthTransactionCount;
+  final int allTransactionCount;
 
   @override
   Widget build(BuildContext context) {
-    return _SoftCard(
-      color: AppColors.primaryContainer,
+    final balancePositive = balance >= 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryContainer.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CircleAvatar(
-                backgroundColor: AppColors.onPrimaryContainer.withValues(
-                  alpha: 0.14,
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   Icons.auto_awesome_rounded,
@@ -301,12 +359,16 @@ class _HeroCard extends StatelessWidget {
                       'Trợ lý tài chính AI',
                       style: AppTextStyles.titleMedium.copyWith(
                         color: AppColors.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      '$transactionCount giao dịch đang được tổng hợp',
+                      '$monthLabel · $monthTransactionCount GD tháng này',
                       style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.onPrimaryContainer,
+                        color: AppColors.onPrimaryContainer.withValues(
+                          alpha: 0.85,
+                        ),
                       ),
                     ),
                   ],
@@ -315,50 +377,120 @@ class _HeroCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          Text(
+            'Số dư tháng',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.onPrimaryContainer.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            formatVnd(balance, withSign: true),
+            style: AppTextStyles.displayCurrency.copyWith(
+              color: AppColors.onPrimaryContainer,
+              fontSize: 32,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            balancePositive
+                ? 'Tiết kiệm khoảng ${savingsRate.toStringAsFixed(0)}% thu nhập tháng'
+                : 'Chi đang vượt thu trong tháng',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.onPrimaryContainer.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
             children: [
-              _MetricPill(label: 'Thu', value: formatVnd(totalIncome)),
-              _MetricPill(label: 'Chi', value: formatVnd(totalExpense)),
-              _MetricPill(label: 'Số dư', value: formatVnd(balance)),
+              Expanded(
+                child: _MetricTile(
+                  label: 'Thu',
+                  value: formatVnd(totalIncome),
+                  icon: Icons.north_east_rounded,
+                  accent: const Color(0xFF86EFAC),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MetricTile(
+                  label: 'Chi',
+                  value: formatVnd(totalExpense),
+                  icon: Icons.south_west_rounded,
+                  accent: const Color(0xFFFCA5A5),
+                ),
+              ),
             ],
           ),
+          if (allTransactionCount != monthTransactionCount) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Phân tích AI dùng toàn bộ $allTransactionCount giao dịch đã ghi',
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.onPrimaryContainer.withValues(alpha: 0.7),
+                fontSize: 11,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _MetricPill extends StatelessWidget {
-  const _MetricPill({required this.label, required this.value});
+class _MetricTile extends StatelessWidget {
+  const _MetricTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.accent,
+  });
 
   final String label;
   final String value;
+  final IconData icon;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.onPrimaryContainer.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Text(
-            label,
-            style: AppTextStyles.labelMedium.copyWith(
-              color: AppColors.onPrimaryContainer,
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(9),
             ),
+            child: Icon(icon, size: 15, color: accent),
           ),
-          Text(
-            value,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onPrimaryContainer,
-              fontWeight: FontWeight.w800,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.onPrimaryContainer.withValues(alpha: 0.8),
+                  ),
+                ),
+                Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -380,36 +512,127 @@ class _BudgetSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = totalBudget <= 0 ? 0.0 : spentThisMonth / totalBudget;
+    final hasBudget = totalBudget > 0;
+    final progress = hasBudget ? spentThisMonth / totalBudget : 0.0;
+    final over = progress > 1;
+    final remaining = totalBudget - spentThisMonth;
+    final percent = (progress * 100).clamp(0, 999);
+
     return _SoftCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ngân sách tháng này', style: AppTextStyles.titleMedium),
-          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  '${formatVnd(spentThisMonth)} / ${formatVnd(totalBudget)}',
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.headlineLargeMobile.copyWith(
-                    color: progress > 1 ? AppColors.error : AppColors.primary,
+                  'Ngân sách tháng này',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Text('$budgetCount mục', style: AppTextStyles.labelMedium),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: hasBudget
+                      ? (over
+                            ? AppColors.expense.withValues(alpha: 0.12)
+                            : AppColors.primary.withValues(alpha: 0.1))
+                      : AppColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  hasBudget
+                      ? (over
+                            ? 'Vượt ${percent.toStringAsFixed(0)}%'
+                            : 'Đã dùng ${percent.toStringAsFixed(0)}%')
+                      : 'Chưa đặt',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: hasBudget
+                        ? (over ? AppColors.expense : AppColors.primary)
+                        : AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(
-            minHeight: 10,
-            value: progress.clamp(0, 1),
-            borderRadius: BorderRadius.circular(999),
-            backgroundColor: AppColors.surfaceContainerHigh,
-            color: progress > 1 ? AppColors.error : AppColors.primary,
-          ),
+          const SizedBox(height: 14),
+          if (!hasBudget) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 20,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Chưa có hạn mức. Vào Quản lý ngân sách, bấm bút chì từng danh mục để đặt.',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Đã chi tháng này: ${formatVnd(spentThisMonth)}',
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ] else ...[
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: formatVnd(spentThisMonth),
+                    style: AppTextStyles.headlineLargeMobile.copyWith(
+                      color: over ? AppColors.expense : AppColors.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' / ${formatVnd(totalBudget)}',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              over
+                  ? 'Đã vượt ${formatVnd(spentThisMonth - totalBudget)} · $budgetCount mục'
+                  : 'Còn lại ${formatVnd(remaining)} · $budgetCount mục',
+              style: AppTextStyles.labelMedium,
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: progress.clamp(0, 1),
+                backgroundColor: AppColors.surfaceContainerHigh,
+                color: over ? AppColors.expense : AppColors.primary,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -417,31 +640,49 @@ class _BudgetSummaryCard extends StatelessWidget {
 }
 
 class _CategorySummaryCard extends StatelessWidget {
-  const _CategorySummaryCard({required this.categoryTotals});
+  const _CategorySummaryCard({
+    required this.categoryTotals,
+    required this.totalExpense,
+  });
 
   final List<_CategoryTotal> categoryTotals;
+  final int totalExpense;
 
   @override
   Widget build(BuildContext context) {
-    final maxAmount = categoryTotals.isEmpty ? 1 : categoryTotals.first.amount;
     return _SoftCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Danh mục chi nhiều', style: AppTextStyles.titleMedium),
+          Text(
+            'Chi theo danh mục',
+            style: AppTextStyles.titleMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Trong tháng hiện tại',
+            style: AppTextStyles.labelMedium,
+          ),
           const SizedBox(height: 14),
           if (categoryTotals.isEmpty)
             Text(
-              'Chưa có khoản chi để phân tích.',
+              'Chưa có khoản chi tháng này để phân tích.',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.onSurfaceVariant,
               ),
             )
-          else
-            for (final item in categoryTotals.take(5)) ...[
-              _CategoryBar(item: item, maxAmount: maxAmount),
-              const SizedBox(height: 12),
+          else ...[
+            for (var i = 0; i < categoryTotals.length && i < 5; i++) ...[
+              if (i > 0) const SizedBox(height: 12),
+              _CategoryBar(
+                item: categoryTotals[i],
+                totalExpense: totalExpense,
+                rank: i + 1,
+              ),
             ],
+          ],
         ],
       ),
     );
@@ -449,41 +690,71 @@ class _CategorySummaryCard extends StatelessWidget {
 }
 
 class _CategoryBar extends StatelessWidget {
-  const _CategoryBar({required this.item, required this.maxAmount});
+  const _CategoryBar({
+    required this.item,
+    required this.totalExpense,
+    required this.rank,
+  });
 
   final _CategoryTotal item;
-  final int maxAmount;
+  final int totalExpense;
+  final int rank;
 
   @override
   Widget build(BuildContext context) {
-    final factor = maxAmount <= 0 ? 0.0 : item.amount / maxAmount;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final share = totalExpense <= 0 ? 0.0 : item.amount / totalExpense;
+
+    return Row(
       children: [
-        Row(
-          children: [
-            Icon(item.meta.icon, size: 18, color: item.meta.color),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                item.category,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w700,
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: item.meta.backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(item.meta.icon, color: item.meta.color, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.category,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatVnd(item.amount),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: share.clamp(0, 1),
+                  backgroundColor: AppColors.surfaceContainerHigh,
+                  color: AppColors.primary,
                 ),
               ),
-            ),
-            Text(formatVnd(item.amount), style: AppTextStyles.bodyMedium),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            minHeight: 8,
-            value: factor.clamp(0, 1),
-            backgroundColor: AppColors.surfaceContainerHigh,
-            color: item.meta.color,
+              const SizedBox(height: 4),
+              Text(
+                '#$rank · ${(share * 100).toStringAsFixed(0)}% tổng chi tháng',
+                style: AppTextStyles.labelMedium.copyWith(fontSize: 11),
+              ),
+            ],
           ),
         ),
       ],
@@ -495,11 +766,13 @@ class _GenerateCard extends StatelessWidget {
   const _GenerateCard({
     required this.canGenerate,
     required this.hasTransactions,
+    required this.isGenerating,
     required this.onGenerate,
   });
 
   final bool canGenerate;
   final bool hasTransactions;
+  final bool isGenerating;
   final VoidCallback onGenerate;
 
   @override
@@ -508,23 +781,57 @@ class _GenerateCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Gợi ý thông minh', style: AppTextStyles.titleMedium),
+          Row(
+            children: [
+              Icon(Icons.lightbulb_outline_rounded, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Gợi ý thông minh',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           Text(
             hasTransactions
-                ? 'AI sẽ đọc tổng thu, tổng chi, ngân sách và danh mục chi tiêu để gợi ý cách quản lý tiền.'
-                : 'Bạn cần thêm ít nhất một giao dịch trước khi tạo phân tích AI.',
+                ? 'AI đọc thu/chi, ngân sách và danh mục để đưa ra gợi ý quản lý tiền cụ thể.'
+                : 'Thêm ít nhất một giao dịch trước khi tạo phân tích.',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.onSurfaceVariant,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
+            height: 52,
             child: FilledButton.icon(
               onPressed: canGenerate ? onGenerate : null,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Tạo phân tích AI'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryContainer,
+                foregroundColor: AppColors.onPrimaryContainer,
+                disabledBackgroundColor: AppColors.primaryContainer.withValues(
+                  alpha: 0.45,
+                ),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: isGenerating
+                  ? SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: AppColors.onPrimaryContainer,
+                      ),
+                    )
+                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: Text(
+                isGenerating ? 'Đang phân tích…' : 'Tạo phân tích AI',
+              ),
             ),
           ),
         ],
@@ -544,10 +851,27 @@ class _InsightResultCard extends StatelessWidget {
       future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _SoftCard(
+          return _SoftCard(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(child: CircularProgressIndicator()),
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Column(
+                children: [
+                  SizedBox.square(
+                    dimension: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.6,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Đang tổng hợp dữ liệu và tạo gợi ý…',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -574,6 +898,7 @@ class _InsightResultCard extends StatelessWidget {
 
         final result = snapshot.data;
         if (result == null) return const SizedBox.shrink();
+        final bullets = _parseInsightBullets(result.text);
 
         return _SoftCard(
           child: Column(
@@ -581,38 +906,96 @@ class _InsightResultCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.psychology_alt_rounded, color: AppColors.primary),
+                  Icon(
+                    Icons.psychology_alt_rounded,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       result.source == _InsightSource.gemini
-                          ? 'Kết quả AI Gemini'
-                          : 'Phân tích tự động',
-                      style: AppTextStyles.titleMedium,
+                          ? 'Kết quả phân tích'
+                          : 'Phân tích cục bộ',
+                      style: AppTextStyles.titleMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   _InsightSourceBadge(source: result.source),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
                 result.source == _InsightSource.gemini
-                    ? 'Gemini phân tích dữ liệu thu chi từ Firestore.'
-                    : 'App tự phân tích dự phòng vì Gemini trả lời quá ngắn.',
+                    ? 'Gemini đọc dữ liệu thu chi của bạn.'
+                    : 'Dùng phân tích dự phòng trên thiết bị.',
                 style: AppTextStyles.labelMedium.copyWith(
                   color: AppColors.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 12),
-              SelectableText(
-                result.text,
-                style: AppTextStyles.bodyMedium.copyWith(height: 1.55),
-              ),
+              const SizedBox(height: 14),
+              if (bullets.isEmpty)
+                SelectableText(
+                  result.text,
+                  style: AppTextStyles.bodyMedium.copyWith(height: 1.55),
+                )
+              else
+                for (var i = 0; i < bullets.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 10),
+                  _InsightBullet(index: i + 1, text: bullets[i]),
+                ],
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _InsightBullet extends StatelessWidget {
+  const _InsightBullet({required this.index, required this.text});
+
+  final int index;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$index',
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SelectableText(
+              text,
+              style: AppTextStyles.bodyMedium.copyWith(height: 1.45),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -625,7 +1008,7 @@ class _InsightSourceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isGemini = source == _InsightSource.gemini;
-    final color = isGemini ? AppColors.primary : AppColors.tertiary;
+    final color = isGemini ? AppColors.primary : AppColors.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
@@ -633,10 +1016,11 @@ class _InsightSourceBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        isGemini ? 'Gemini' : 'Dự phòng',
+        isGemini ? 'Gemini' : 'Cục bộ',
         style: AppTextStyles.labelMedium.copyWith(
           color: color,
           fontWeight: FontWeight.w800,
+          fontSize: 11,
         ),
       ),
     );
@@ -664,10 +1048,9 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _SoftCard extends StatelessWidget {
-  const _SoftCard({required this.child, this.color});
+  const _SoftCard({required this.child});
 
   final Widget child;
-  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -676,15 +1059,42 @@ class _SoftCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color ?? AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.20),
+          color: AppColors.outlineVariant.withValues(alpha: 0.14),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: child,
     );
   }
+}
+
+List<String> _parseInsightBullets(String text) {
+  final lines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+
+  final bullets = <String>[];
+  for (final line in lines) {
+    if (line.startsWith('- ') ||
+        line.startsWith('• ') ||
+        line.startsWith('* ')) {
+      bullets.add(line.substring(2).trim());
+    } else if (RegExp(r'^\d+[\.\)]\s+').hasMatch(line)) {
+      bullets.add(line.replaceFirst(RegExp(r'^\d+[\.\)]\s+'), '').trim());
+    }
+  }
+  return bullets;
 }
 
 class _CategoryTotal {

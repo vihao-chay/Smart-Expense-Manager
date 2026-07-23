@@ -13,7 +13,7 @@ import '../../data/repositories/firestore_repository.dart';
 import '../add_transaction/add_transaction_screen.dart';
 import '../transaction_detail/transaction_detail_screen.dart';
 
-enum _TransactionFilter { all, income, expense }
+enum _TypeFilter { all, income, expense }
 
 enum _DateFilter { all, today, thisMonth }
 
@@ -35,9 +35,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   final _repository = FirestoreRepository();
   final _searchController = TextEditingController();
 
-  var _filter = _TransactionFilter.all;
+  var _typeFilter = _TypeFilter.all;
   var _dateFilter = _DateFilter.all;
   var _categoryFilter = 'Tất cả';
+  var _filtersExpanded = false;
   var _didApplyRouteArgs = false;
 
   @override
@@ -49,14 +50,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   List<AppTransaction> _filterTransactions(List<AppTransaction> transactions) {
     final query = _searchController.text.trim().toLowerCase();
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     return transactions.where((transaction) {
-      final matchesType = switch (_filter) {
-        _TransactionFilter.all => true,
-        _TransactionFilter.income =>
-          transaction.type == AppTransactionType.income,
-        _TransactionFilter.expense =>
-          transaction.type == AppTransactionType.expense,
+      final matchesType = switch (_typeFilter) {
+        _TypeFilter.all => true,
+        _TypeFilter.income => transaction.type == AppTransactionType.income,
+        _TypeFilter.expense => transaction.type == AppTransactionType.expense,
       };
 
       final matchesDate = switch (_dateFilter) {
@@ -67,8 +67,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 transaction.transactionDate.month,
                 transaction.transactionDate.day,
               ) ==
-              DateTime(now.year, now.month, now.day),
-        _DateFilter.thisMonth => isSameMonth(transaction.transactionDate, now),
+              today,
+        _DateFilter.thisMonth =>
+          isSameMonth(transaction.transactionDate, now),
       };
 
       final matchesCategory =
@@ -105,6 +106,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
+  int _sumByType(List<AppTransaction> items, AppTransactionType type) {
+    return items
+        .where((item) => item.type == type)
+        .fold<int>(0, (sum, item) => sum + item.amount);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -114,15 +121,20 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is! TransactionsArgs) return;
 
-    _filter = switch (args.initialType) {
-      AppTransactionType.income => _TransactionFilter.income,
-      AppTransactionType.expense => _TransactionFilter.expense,
-      null => _TransactionFilter.all,
+    _typeFilter = switch (args.initialType) {
+      AppTransactionType.income => _TypeFilter.income,
+      AppTransactionType.expense => _TypeFilter.expense,
+      null => _TypeFilter.all,
     };
 
     final category = args.initialCategory?.trim();
     if (category != null && category.isNotEmpty) {
       _categoryFilter = category;
+    }
+
+    if (_typeFilter != _TypeFilter.all ||
+        (_categoryFilter.isNotEmpty && _categoryFilter != 'Tất cả')) {
+      _filtersExpanded = true;
     }
   }
 
@@ -134,6 +146,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         onPressed: _openAddTransaction,
         backgroundColor: AppColors.primaryContainer,
         foregroundColor: AppColors.onPrimaryContainer,
+        elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: const Icon(Icons.add_rounded, size: 28),
       ),
@@ -170,37 +183,66 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             transactionSnapshot.data ?? [],
                           );
                           final groups = _groupTransactions(transactions);
+                          final income = _sumByType(
+                            transactions,
+                            AppTransactionType.income,
+                          );
+                          final expense = _sumByType(
+                            transactions,
+                            AppTransactionType.expense,
+                          );
 
                           return Column(
                             children: [
                               _SearchAndFilters(
                                 searchController: _searchController,
-                                selectedFilter: _filter,
-                                selectedDateFilter: _dateFilter,
+                                selectedType: _typeFilter,
+                                selectedDate: _dateFilter,
                                 selectedCategory: _categoryFilter,
+                                filtersExpanded: _filtersExpanded,
+                                resultCount: transactions.length,
+                                incomeTotal: income,
+                                expenseTotal: expense,
                                 onSearchChanged: () => setState(() {}),
-                                onFilterChanged: (filter) {
-                                  setState(() => _filter = filter);
+                                onToggleFilters: () {
+                                  setState(
+                                    () => _filtersExpanded = !_filtersExpanded,
+                                  );
                                 },
-                                onDateFilterChanged: (filter) {
+                                onTypeChanged: (filter) {
+                                  setState(() => _typeFilter = filter);
+                                },
+                                onDateChanged: (filter) {
                                   setState(() => _dateFilter = filter);
                                 },
                                 onCategoryChanged: (category) {
-                                  setState(
-                                    () =>
-                                        _categoryFilter = category ?? 'Tất cả',
-                                  );
+                                  setState(() => _categoryFilter = category);
+                                },
+                                onClearFilters: () {
+                                  setState(() {
+                                    _typeFilter = _TypeFilter.all;
+                                    _dateFilter = _DateFilter.all;
+                                    _categoryFilter = 'Tất cả';
+                                  });
                                 },
                               ),
                               Expanded(
                                 child: groups.isEmpty
-                                    ? const _EmptyTransactions()
+                                    ? _EmptyTransactions(
+                                        hasActiveFilters:
+                                            _typeFilter != _TypeFilter.all ||
+                                            _dateFilter != _DateFilter.all ||
+                                            _categoryFilter != 'Tất cả' ||
+                                            _searchController.text
+                                                .trim()
+                                                .isNotEmpty,
+                                      )
                                     : ListView(
                                         padding: const EdgeInsets.fromLTRB(
                                           16,
-                                          8,
+                                          0,
                                           16,
-                                          96,
+                                          104,
                                         ),
                                         children: [
                                           for (final group in groups) ...[
@@ -208,7 +250,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                               group: group,
                                               onTransactionTap: _openDetail,
                                             ),
-                                            const SizedBox(height: 20),
+                                            const SizedBox(height: 14),
                                           ],
                                         ],
                                       ),
@@ -232,114 +274,411 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 class _SearchAndFilters extends StatelessWidget {
   const _SearchAndFilters({
     required this.searchController,
-    required this.selectedFilter,
-    required this.selectedDateFilter,
+    required this.selectedType,
+    required this.selectedDate,
     required this.selectedCategory,
+    required this.filtersExpanded,
+    required this.resultCount,
+    required this.incomeTotal,
+    required this.expenseTotal,
     required this.onSearchChanged,
-    required this.onFilterChanged,
-    required this.onDateFilterChanged,
+    required this.onToggleFilters,
+    required this.onTypeChanged,
+    required this.onDateChanged,
     required this.onCategoryChanged,
+    required this.onClearFilters,
   });
 
   final TextEditingController searchController;
-  final _TransactionFilter selectedFilter;
-  final _DateFilter selectedDateFilter;
+  final _TypeFilter selectedType;
+  final _DateFilter selectedDate;
   final String selectedCategory;
+  final bool filtersExpanded;
+  final int resultCount;
+  final int incomeTotal;
+  final int expenseTotal;
   final VoidCallback onSearchChanged;
-  final ValueChanged<_TransactionFilter> onFilterChanged;
-  final ValueChanged<_DateFilter> onDateFilterChanged;
-  final ValueChanged<String?> onCategoryChanged;
+  final VoidCallback onToggleFilters;
+  final ValueChanged<_TypeFilter> onTypeChanged;
+  final ValueChanged<_DateFilter> onDateChanged;
+  final ValueChanged<String> onCategoryChanged;
+  final VoidCallback onClearFilters;
+
+  String get _dateLabel => switch (selectedDate) {
+    _DateFilter.all => 'Mọi thời gian',
+    _DateFilter.today => 'Hôm nay',
+    _DateFilter.thisMonth => 'Tháng này',
+  };
+
+  String get _categoryLabel =>
+      selectedCategory == 'Tất cả' ? 'Danh mục' : selectedCategory;
+
+  bool get _hasActiveFilters =>
+      selectedType != _TypeFilter.all ||
+      selectedDate != _DateFilter.all ||
+      selectedCategory != 'Tất cả';
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.outlineVariant.withValues(alpha: 0.14),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: (_) => onSearchChanged(),
+                    style: AppTextStyles.bodyMedium,
+                    decoration: InputDecoration(
+                      hintText: 'Tìm kiếm giao dịch...',
+                      hintStyle: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                      suffixIcon: searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Xóa tìm kiếm',
+                              onPressed: () {
+                                searchController.clear();
+                                onSearchChanged();
+                              },
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      filled: true,
+                      fillColor: AppColors.surfaceContainerLow,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _FilterToggleButton(
+                  expanded: filtersExpanded,
+                  active: _hasActiveFilters,
+                  onTap: onToggleFilters,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _SummaryStrip(
+              resultCount: resultCount,
+              incomeTotal: incomeTotal,
+              expenseTotal: expenseTotal,
+              showClear: _hasActiveFilters,
+              onClear: onClearFilters,
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: filtersExpanded
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 12),
+                        _TypeSegmentedControl(
+                          selected: selectedType,
+                          onChanged: onTypeChanged,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _FilterMenuButton(
+                                icon: Icons.calendar_today_outlined,
+                                label: _dateLabel,
+                                active: selectedDate != _DateFilter.all,
+                                menuChildren: [
+                                  for (final date in _DateFilter.values)
+                                    MenuItemButton(
+                                      onPressed: () => onDateChanged(date),
+                                      trailingIcon: selectedDate == date
+                                          ? Icon(
+                                              Icons.check_rounded,
+                                              size: 18,
+                                              color: AppColors.primary,
+                                            )
+                                          : null,
+                                      child: Text(switch (date) {
+                                        _DateFilter.all => 'Mọi thời gian',
+                                        _DateFilter.today => 'Hôm nay',
+                                        _DateFilter.thisMonth => 'Tháng này',
+                                      }),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _FilterMenuButton(
+                                icon: Icons.category_outlined,
+                                label: _categoryLabel,
+                                active: selectedCategory != 'Tất cả',
+                                menuChildren: [
+                                  for (final category in [
+                                    'Tất cả',
+                                    ...allCategoryLabels,
+                                  ])
+                                    MenuItemButton(
+                                      onPressed: () =>
+                                          onCategoryChanged(category),
+                                      trailingIcon: selectedCategory == category
+                                          ? Icon(
+                                              Icons.check_rounded,
+                                              size: 18,
+                                              color: AppColors.primary,
+                                            )
+                                          : null,
+                                      child: Text(
+                                        category == 'Tất cả'
+                                            ? 'Tất cả danh mục'
+                                            : category,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterToggleButton extends StatelessWidget {
+  const _FilterToggleButton({
+    required this.expanded,
+    required this.active,
+    required this.onTap,
+  });
+
+  final bool expanded;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final highlighted = expanded || active;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: highlighted
+                ? AppColors.primaryFixed.withValues(alpha: 0.45)
+                : AppColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: highlighted
+                  ? AppColors.primary.withValues(alpha: 0.28)
+                  : AppColors.outlineVariant.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                color: highlighted
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+              ),
+              if (active)
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.surfaceContainerLowest,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryStrip extends StatelessWidget {
+  const _SummaryStrip({
+    required this.resultCount,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.showClear,
+    required this.onClear,
+  });
+
+  final int resultCount;
+  final int incomeTotal;
+  final int expenseTotal;
+  final bool showClear;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final net = incomeTotal - expenseTotal;
+    final netPositive = net >= 0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                '$resultCount giao dịch',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (showClear) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onClear,
+                  child: Text(
+                    'Xóa lọc',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+              const Spacer(),
+              Text(
+                'Chênh lệch ',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                formatVnd(net, withSign: true),
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: netPositive ? AppColors.primary : AppColors.expense,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _FlowChip(
+                  label: 'Thu',
+                  amount: incomeTotal,
+                  color: AppColors.primary,
+                  prefix: '+',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FlowChip(
+                  label: 'Chi',
+                  amount: expenseTotal,
+                  color: AppColors.expense,
+                  prefix: '-',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowChip extends StatelessWidget {
+  const _FlowChip({
+    required this.label,
+    required this.amount,
+    required this.color,
+    required this.prefix,
+  });
+
+  final String label;
+  final int amount;
+  final Color color;
+  final String prefix;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.surface.withValues(alpha: 0.96),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              controller: searchController,
-              onChanged: (_) => onSearchChanged(),
-              decoration: InputDecoration(
-                hintText: 'Tìm kiếm giao dịch...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Xóa tìm kiếm',
-                        onPressed: () {
-                          searchController.clear();
-                          onSearchChanged();
-                        },
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                filled: true,
-                fillColor: AppColors.surfaceContainerLow,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+          Text(
+            label,
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
-              children: [
-                _FilterChipButton(
-                  label: 'Tất cả',
-                  selected: selectedFilter == _TransactionFilter.all,
-                  onTap: () => onFilterChanged(_TransactionFilter.all),
-                ),
-                _FilterChipButton(
-                  label: 'Thu nhập',
-                  selected: selectedFilter == _TransactionFilter.income,
-                  onTap: () => onFilterChanged(_TransactionFilter.income),
-                ),
-                _FilterChipButton(
-                  label: 'Chi tiêu',
-                  selected: selectedFilter == _TransactionFilter.expense,
-                  onTap: () => onFilterChanged(_TransactionFilter.expense),
-                ),
-                _FilterChipButton(
-                  label: 'Hôm nay',
-                  selected: selectedDateFilter == _DateFilter.today,
-                  onTap: () => onDateFilterChanged(
-                    selectedDateFilter == _DateFilter.today
-                        ? _DateFilter.all
-                        : _DateFilter.today,
-                  ),
-                ),
-                _FilterChipButton(
-                  label: 'Tháng này',
-                  selected: selectedDateFilter == _DateFilter.thisMonth,
-                  onTap: () => onDateFilterChanged(
-                    selectedDateFilter == _DateFilter.thisMonth
-                        ? _DateFilter.all
-                        : _DateFilter.thisMonth,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: DropdownButtonFormField<String>(
-              initialValue: selectedCategory,
-              decoration: InputDecoration(
-                labelText: 'Danh mục',
-                filled: true,
-                fillColor: AppColors.surfaceContainerLowest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              items: ['Tất cả', ...allCategoryLabels].map((category) {
-                return DropdownMenuItem(value: category, child: Text(category));
-              }).toList(),
-              onChanged: onCategoryChanged,
+          const Spacer(),
+          Text(
+            '$prefix${formatVnd(amount)}',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -348,8 +687,45 @@ class _SearchAndFilters extends StatelessWidget {
   }
 }
 
-class _FilterChipButton extends StatelessWidget {
-  const _FilterChipButton({
+class _TypeSegmentedControl extends StatelessWidget {
+  const _TypeSegmentedControl({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final _TypeFilter selected;
+  final ValueChanged<_TypeFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          for (final type in _TypeFilter.values)
+            Expanded(
+              child: _TypeSegment(
+                label: switch (type) {
+                  _TypeFilter.all => 'Tất cả',
+                  _TypeFilter.income => 'Thu nhập',
+                  _TypeFilter.expense => 'Chi tiêu',
+                },
+                selected: selected == type,
+                onTap: () => onChanged(type),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypeSegment extends StatelessWidget {
+  const _TypeSegment({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -361,13 +737,116 @@ class _FilterChipButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        selected: selected,
-        label: Text(label),
-        onSelected: (_) => onTap(),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.18),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: AppTextStyles.labelMedium.copyWith(
+            color: selected
+                ? AppColors.onPrimaryContainer
+                : AppColors.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
+    );
+  }
+}
+
+class _FilterMenuButton extends StatelessWidget {
+  const _FilterMenuButton({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.menuChildren,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final List<Widget> menuChildren;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      builder: (context, controller, child) {
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              if (controller.isOpen) {
+                controller.close();
+              } else {
+                controller.open();
+              }
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: active
+                    ? AppColors.primaryFixed.withValues(alpha: 0.4)
+                    : AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: active
+                      ? AppColors.primary.withValues(alpha: 0.28)
+                      : AppColors.outlineVariant.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 18,
+                    color: active
+                        ? AppColors.primary
+                        : AppColors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: active
+                            ? AppColors.primary
+                            : AppColors.onSurface,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 20,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      menuChildren: menuChildren,
     );
   }
 }
@@ -381,60 +860,131 @@ class _TransactionGroupSection extends StatelessWidget {
   final _TransactionGroup group;
   final ValueChanged<AppTransaction> onTransactionTap;
 
+  int get _dayNet {
+    var income = 0;
+    var expense = 0;
+    for (final item in group.transactions) {
+      if (item.type == AppTransactionType.income) {
+        income += item.amount;
+      } else {
+        expense += item.amount;
+      }
+    }
+    return income - expense;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final dayNet = _dayNet;
+    final netPositive = dayNet >= 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(group.title, style: AppTextStyles.titleMedium),
-        ),
-        const SizedBox(height: 8),
-        for (final transaction in group.transactions) ...[
-          _TransactionCard(
-            transaction: transaction,
-            onTap: () => onTransactionTap(transaction),
+          padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+          child: Row(
+            children: [
+              Text(
+                group.title,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${group.transactions.length} giao dịch',
+                style: AppTextStyles.labelMedium,
+              ),
+              const Spacer(),
+              Text(
+                formatVnd(dayNet, withSign: true),
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: netPositive ? AppColors.primary : AppColors.expense,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-        ],
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.035),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < group.transactions.length; i++)
+                _TransactionCard(
+                  transaction: group.transactions[i],
+                  onTap: () => onTransactionTap(group.transactions[i]),
+                  showDivider: i != group.transactions.length - 1,
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
 }
 
 class _TransactionCard extends StatelessWidget {
-  const _TransactionCard({required this.transaction, required this.onTap});
+  const _TransactionCard({
+    required this.transaction,
+    required this.onTap,
+    this.showDivider = false,
+  });
 
   final AppTransaction transaction;
   final VoidCallback onTap;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
     final meta = categoryMeta(transaction.category, type: transaction.type);
     final isIncome = transaction.type == AppTransactionType.income;
+    final time =
+        '${transaction.transactionDate.hour.toString().padLeft(2, '0')}:'
+        '${transaction.transactionDate.minute.toString().padLeft(2, '0')}';
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.all(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.outlineVariant.withValues(alpha: 0.20),
-            ),
+            border: showDivider
+                ? Border(
+                    bottom: BorderSide(
+                      color: AppColors.outlineVariant.withValues(alpha: 0.16),
+                    ),
+                  )
+                : null,
           ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: meta.backgroundColor,
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: meta.backgroundColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Icon(meta.icon, color: meta.color),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,26 +992,30 @@ class _TransactionCard extends StatelessWidget {
                     Text(
                       transaction.title ?? transaction.category,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.titleMedium,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${formatShortDate(transaction.transactionDate)} • ${transaction.paymentMethod ?? 'Ví cá nhân'}',
+                      [
+                        transaction.category,
+                        time,
+                        transaction.paymentMethod ??
+                            (isIncome ? 'Chuyển khoản' : 'Ví cá nhân'),
+                      ].join(' · '),
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.labelMedium,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  formatTransactionAmount(transaction),
-                  textAlign: TextAlign.end,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: isIncome ? AppColors.secondary : AppColors.error,
-                  ),
+              const SizedBox(width: 10),
+              Text(
+                formatTransactionAmount(transaction),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: isIncome ? AppColors.primary : AppColors.expense,
                 ),
               ),
             ],
@@ -473,26 +1027,45 @@ class _TransactionCard extends StatelessWidget {
 }
 
 class _EmptyTransactions extends StatelessWidget {
-  const _EmptyTransactions();
+  const _EmptyTransactions({required this.hasActiveFilters});
+
+  final bool hasActiveFilters;
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(28, 12, 28, 96),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: AppColors.surfaceContainerHigh,
-              child: const Icon(Icons.receipt_long_outlined),
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: AppColors.primaryFixed.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Icon(
+                hasActiveFilters
+                    ? Icons.filter_alt_off_outlined
+                    : Icons.receipt_long_rounded,
+                size: 40,
+                color: AppColors.primary,
+              ),
             ),
-            const SizedBox(height: 16),
-            Text('Chưa có giao dịch phù hợp', style: AppTextStyles.titleMedium),
-            const SizedBox(height: 4),
+            const SizedBox(height: 18),
             Text(
-              'Thử đổi từ khóa, bộ lọc hoặc thêm giao dịch mới.',
+              hasActiveFilters
+                  ? 'Không tìm thấy giao dịch'
+                  : 'Chưa có giao dịch',
+              style: AppTextStyles.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hasActiveFilters
+                  ? 'Thử đổi bộ lọc hoặc từ khóa tìm kiếm.'
+                  : 'Nhấn + để thêm khoản thu hoặc chi đầu tiên.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.onSurfaceVariant,
@@ -603,14 +1176,34 @@ class _NavItem extends StatelessWidget {
 
 List<_TransactionGroup> _groupTransactions(List<AppTransaction> transactions) {
   final groups = <String, List<AppTransaction>>{};
+  final orderKeys = <String, DateTime>{};
+
   for (final transaction in transactions) {
-    groups
-        .putIfAbsent(formatShortDate(transaction.transactionDate), () => [])
-        .add(transaction);
+    final key = formatShortDate(transaction.transactionDate);
+    groups.putIfAbsent(key, () => []).add(transaction);
+    orderKeys.putIfAbsent(
+      key,
+      () => DateTime(
+        transaction.transactionDate.year,
+        transaction.transactionDate.month,
+        transaction.transactionDate.day,
+      ),
+    );
   }
-  return groups.entries
-      .map((entry) => _TransactionGroup(entry.key, entry.value))
-      .toList();
+
+  for (final entries in groups.values) {
+    entries.sort(
+      (a, b) => b.transactionDate.compareTo(a.transactionDate),
+    );
+  }
+
+  final sortedKeys = orderKeys.keys.toList()
+    ..sort((a, b) => orderKeys[b]!.compareTo(orderKeys[a]!));
+
+  return [
+    for (final key in sortedKeys)
+      _TransactionGroup(key, groups[key]!),
+  ];
 }
 
 class _TransactionGroup {

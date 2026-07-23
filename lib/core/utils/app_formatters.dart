@@ -18,7 +18,7 @@ String formatVnd(num value, {bool withSign = false}) {
     }
   }
 
-  return '$sign${buffer.toString()} ₫';
+  return '$sign${buffer.toString()} đ';
 }
 
 String formatTransactionAmount(AppTransaction transaction) {
@@ -51,6 +51,24 @@ String formatDateTime(DateTime? date) {
 String formatTime(DateTime date) {
   return '${date.hour.toString().padLeft(2, '0')}:'
       '${date.minute.toString().padLeft(2, '0')}';
+}
+
+/// Relative time for notification lists (banking-app style).
+String formatRelativeTime(DateTime? date) {
+  if (date == null) return '--';
+
+  final now = DateTime.now();
+  final diff = now.difference(date);
+  final today = DateTime(now.year, now.month, now.day);
+  final target = DateTime(date.year, date.month, date.day);
+  final dayDiff = today.difference(target).inDays;
+
+  if (diff.inSeconds < 45) return 'Vừa xong';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
+  if (dayDiff == 0) return formatTime(date);
+  if (dayDiff == 1) return 'Hôm qua, ${formatTime(date)}';
+  if (dayDiff < 7) return '$dayDiff ngày trước';
+  return formatDateTime(date);
 }
 
 String monthKey(DateTime date) {
