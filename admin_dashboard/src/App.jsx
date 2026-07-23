@@ -5,6 +5,7 @@ import {
   Bug,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
   ExternalLink,
   Eye,
@@ -63,6 +64,18 @@ const reportRangeOptions = [
   { value: 'all', label: 'Tất cả' },
   { value: 'custom', label: 'Tùy chọn' },
 ];
+
+const adminViewIds = ['overview', 'users', 'reports', 'documents', 'bugs', 'campaigns', 'profile'];
+const adminActiveViewStorageKey = 'smart_expense_admin_active_view';
+
+function getInitialAdminView() {
+  try {
+    const savedView = window.localStorage.getItem(adminActiveViewStorageKey);
+    return adminViewIds.includes(savedView) ? savedView : 'overview';
+  } catch {
+    return 'overview';
+  }
+}
 
 function App() {
   const [authState, setAuthState] = useState({
@@ -222,7 +235,7 @@ function AdminDashboard({ adminProfile, onSignOut }) {
   const [bugReports, setBugReports] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [campaignRecipients, setCampaignRecipients] = useState([]);
-  const [activeView, setActiveView] = useState('overview');
+  const [activeView, setActiveView] = useState(getInitialAdminView);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [queryText, setQueryText] = useState('');
   const [reportPreset, setReportPreset] = useState('last6');
@@ -230,6 +243,9 @@ function AdminDashboard({ adminProfile, onSignOut }) {
   const [reportEndDate, setReportEndDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [globalSearchText, setGlobalSearchText] = useState('');
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -334,9 +350,22 @@ function AdminDashboard({ adminProfile, onSignOut }) {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(adminActiveViewStorageKey, activeView);
+    } catch {
+      // Ignore storage errors so the dashboard can still work in private mode.
+    }
+  }, [activeView]);
+
+  const currentAdminProfile = useMemo(
+    () => usersData.find((user) => user.id === adminProfile?.id) || adminProfile,
+    [usersData, adminProfile],
+  );
+
   const appUsers = useMemo(
-    () => usersData.filter((user) => user.role !== 'admin' && user.id !== adminProfile?.id),
-    [usersData, adminProfile?.id],
+    () => usersData.filter((user) => user.role !== 'admin' && user.id !== currentAdminProfile?.id),
+    [usersData, currentAdminProfile?.id],
   );
 
   const filteredUsers = useMemo(() => {
@@ -391,6 +420,16 @@ function AdminDashboard({ adminProfile, onSignOut }) {
     () => buildCampaignStats(campaigns, campaignRecipients),
     [campaigns, campaignRecipients],
   );
+  const globalSearchResults = useMemo(
+    () => buildGlobalSearchResults(globalSearchText, {
+      users: appUsers,
+      transactions,
+      documents,
+      bugReports,
+      campaigns: campaignStats,
+    }),
+    [globalSearchText, appUsers, transactions, documents, bugReports, campaignStats],
+  );
   const viewTitle = {
     overview: 'Tổng quan hệ thống',
     users: 'Quản lý người dùng',
@@ -400,6 +439,7 @@ function AdminDashboard({ adminProfile, onSignOut }) {
     documents: 'Quản lý tài liệu PDF',
     bugs: 'Báo cáo lỗi',
     campaigns: 'Gửi thông báo',
+    profile: 'Hồ sơ admin',
   }[activeView] || viewTitle;
 
   async function updateUser(uid, updates) {
@@ -410,6 +450,26 @@ function AdminDashboard({ adminProfile, onSignOut }) {
       });
     } catch (err) {
       setError(firestoreMessage(err));
+    }
+  }
+
+  async function updateAdminProfile(updates) {
+    if (!currentAdminProfile?.id) {
+      throw new Error('Không tìm thấy hồ sơ admin hiện tại.');
+    }
+    await updateDoc(doc(db, 'users', currentAdminProfile.id), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  function handleGlobalSearchSelect(result) {
+    setActiveView(result.view);
+    setGlobalSearchOpen(false);
+    setGlobalSearchText('');
+    if (result.view === 'users' && result.item?.id) {
+      setSelectedUserId(result.item.id);
+      setQueryText(result.item.email || result.item.fullName || result.item.id);
     }
   }
 
@@ -477,22 +537,86 @@ function AdminDashboard({ adminProfile, onSignOut }) {
           </button>
         </nav>
 
-        <div className="sidebar-footer">
-          <button className="sidebar-logout" onClick={onSignOut} type="button">
-            <LogOut size={18} />
-            Đăng xuất
-          </button>
-        </div>
       </aside>
 
       <main className="dashboard">
         <header className="topbar">
-          <div>
-            <h1 className="dynamic-title">{extendedViewTitle}</h1>
-            <p>Xin chào, {adminProfile?.fullName || 'Admin'}</p>
-            <h1>Quản lý người dùng & báo cáo</h1>
+          <div className="topbar-search">
+            <Search size={17} />
+            <input
+              value={globalSearchText}
+              onBlur={() => window.setTimeout(() => setGlobalSearchOpen(false), 120)}
+              onChange={(event) => {
+                setGlobalSearchText(event.target.value);
+                setGlobalSearchOpen(true);
+              }}
+              onFocus={() => setGlobalSearchOpen(true)}
+              placeholder="Tìm user, giao dịch, tài liệu, bug..."
+              type="search"
+            />
+            {globalSearchText && (
+              <button
+                className="topbar-search-clear"
+                onClick={() => {
+                  setGlobalSearchText('');
+                  setGlobalSearchOpen(false);
+                }}
+                type="button"
+              >
+                <X size={15} />
+              </button>
+            )}
+            {globalSearchOpen && globalSearchText.trim() && (
+              <GlobalSearchDropdown
+                query={globalSearchText}
+                results={globalSearchResults}
+                onSelect={handleGlobalSearchSelect}
+              />
+            )}
+          </div>
+          <div className="topbar-user-menu">
+            <button
+              className={profileMenuOpen ? 'topbar-user active' : 'topbar-user'}
+              onClick={() => setProfileMenuOpen((current) => !current)}
+              type="button"
+            >
+              <Avatar user={currentAdminProfile || { fullName: 'Admin', email: '' }} />
+              <span>
+                <strong>{currentAdminProfile?.fullName || 'Admin'}</strong>
+              </span>
+              <ChevronDown size={16} />
+            </button>
+            {profileMenuOpen && (
+              <div className="topbar-dropdown">
+                <button
+                  className="topbar-dropdown-profile"
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    setActiveView('profile');
+                  }}
+                  type="button"
+                >
+                  <UserCog size={16} />
+                  Hồ sơ
+                </button>
+                <button
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    onSignOut();
+                  }}
+                  type="button"
+                >
+                  <LogOut size={16} />
+                  Đăng xuất
+                </button>
+              </div>
+            )}
           </div>
         </header>
+
+        <section className="page-heading">
+          <h1>{extendedViewTitle}</h1>
+        </section>
 
         {error && (
           <div className="error-banner">
@@ -617,10 +741,204 @@ function AdminDashboard({ adminProfile, onSignOut }) {
                 onError={setError}
               />
             )}
+
+            {activeView === 'profile' && (
+              <AdminProfileView
+                profile={currentAdminProfile}
+                onSave={updateAdminProfile}
+              />
+            )}
           </>
         )}
       </main>
     </div>
+  );
+}
+
+function GlobalSearchDropdown({ query, results, onSelect }) {
+  return (
+    <div className="global-search-panel">
+      <div className="global-search-head">
+        <span>Kết quả tìm kiếm</span>
+        <small>{results.length} kết quả</small>
+      </div>
+      {results.length === 0 ? (
+        <p className="global-search-empty">
+          Không tìm thấy dữ liệu phù hợp với "{query.trim()}".
+        </p>
+      ) : (
+        <div className="global-search-list">
+          {results.map((result) => (
+            <button
+              className="global-search-row"
+              key={`${result.type}-${result.id}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onSelect(result)}
+              type="button"
+            >
+              <span className={`global-search-icon ${result.type}`}>
+                {result.type === 'user' && <Users size={16} />}
+                {result.type === 'transaction' && <CircleDollarSign size={16} />}
+                {result.type === 'document' && <FileText size={16} />}
+                {result.type === 'bug' && <Bug size={16} />}
+                {result.type === 'campaign' && <Bell size={16} />}
+              </span>
+              <span className="global-search-content">
+                <strong>{result.title}</strong>
+                <small>{result.description}</small>
+              </span>
+              <span className="global-search-type">{result.typeLabel}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminProfileView({ profile, onSave }) {
+  const [form, setForm] = useState({
+    fullName: '',
+    phoneNumber: '',
+    position: '',
+    avatarUrl: '',
+    adminNote: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setForm({
+      fullName: profile?.fullName || '',
+      phoneNumber: profile?.phoneNumber || '',
+      position: profile?.position || '',
+      avatarUrl: profile?.avatarUrl || '',
+      adminNote: profile?.adminNote || '',
+    });
+  }, [profile]);
+
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setMessage('');
+    setError('');
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const fullName = form.fullName.trim();
+    if (!fullName) {
+      setError('Vui lòng nhập tên admin.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await onSave({
+        fullName,
+        phoneNumber: form.phoneNumber.trim(),
+        position: form.position.trim(),
+        avatarUrl: form.avatarUrl.trim(),
+        adminNote: form.adminNote.trim(),
+      });
+      setMessage('Đã cập nhật hồ sơ admin.');
+    } catch (err) {
+      setError(firestoreMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="profile-admin-layout">
+      <Panel title="Thông tin hồ sơ">
+        <div className="admin-profile-summary">
+          <Avatar user={{ ...profile, ...form }} large />
+          <div>
+            <h2>{form.fullName || 'Admin'}</h2>
+            <p>{profile?.email || 'Chưa có email'}</p>
+            <span>{form.position || 'Quản trị viên'}</span>
+          </div>
+        </div>
+
+        <div className="profile-readonly-grid">
+          <div>
+            <span>Email</span>
+            <strong>{profile?.email || 'Không có'}</strong>
+          </div>
+          <div>
+            <span>Role</span>
+            <strong>{profile?.role || 'admin'}</strong>
+          </div>
+          <div>
+            <span>Trạng thái</span>
+            <strong>{profile?.status || 'active'}</strong>
+          </div>
+          <div>
+            <span>UID</span>
+            <strong>{profile?.id || 'Không rõ'}</strong>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Chỉnh sửa thông tin">
+        <form className="admin-profile-form" onSubmit={handleSubmit}>
+          <label>
+            Họ tên
+            <input
+              value={form.fullName}
+              onChange={(event) => updateField('fullName', event.target.value)}
+              placeholder="Tên admin"
+              required
+            />
+          </label>
+          <label>
+            Số điện thoại
+            <input
+              value={form.phoneNumber}
+              onChange={(event) => updateField('phoneNumber', event.target.value)}
+              placeholder="Ví dụ: 0901234567"
+            />
+          </label>
+          <label>
+            Chức vụ
+            <input
+              value={form.position}
+              onChange={(event) => updateField('position', event.target.value)}
+              placeholder="Quản trị viên"
+            />
+          </label>
+          <label>
+            Link avatar
+            <input
+              value={form.avatarUrl}
+              onChange={(event) => updateField('avatarUrl', event.target.value)}
+              placeholder="https://..."
+              type="url"
+            />
+          </label>
+          <label className="admin-profile-note">
+            Ghi chú
+            <textarea
+              value={form.adminNote}
+              onChange={(event) => updateField('adminNote', event.target.value)}
+              placeholder="Ghi chú nội bộ cho tài khoản admin"
+              rows={4}
+            />
+          </label>
+
+          {error && <div className="error-box">{error}</div>}
+          {message && <div className="success-box">{message}</div>}
+
+          <button className="primary-button" disabled={saving} type="submit">
+            <CheckCircle2 size={18} />
+            {saving ? 'Đang lưu...' : 'Lưu hồ sơ'}
+          </button>
+        </form>
+      </Panel>
+    </section>
   );
 }
 
@@ -667,33 +985,46 @@ function DocumentsManager({ documents, onError }) {
             placeholder="Tìm theo tên báo cáo, người xuất, email, UID..."
           />
         </div>
-        <div className="admin-list">
+        <div className="admin-list document-list">
           {documents.length === 0 ? (
             <p className="empty-text">Chưa có tài liệu PDF.</p>
           ) : filteredDocuments.length === 0 ? (
             <p className="empty-text">Không tìm thấy tài liệu phù hợp.</p>
           ) : (
             filteredDocuments.map((item) => (
-              <div className="admin-row" key={item.id}>
-                <FileText size={22} />
-                <span>
-                  <strong>{item.title || item.fileName || 'Tài liệu'}</strong>
-                  <small>
-                    {item.category} • {formatDate(item.createdAt || new Date())}
-                  </small>
-                  <small>
-                    Người xuất: {item.userName || item.userEmail || item.userId || 'Không rõ'}
-                  </small>
-                  {item.periodLabel && <small>Kỳ thống kê: {item.periodLabel}</small>}
-                </span>
-                {item.fileUrl && (
-                  <a className="icon-link" href={item.fileUrl} rel="noreferrer" target="_blank">
-                    <ExternalLink size={18} />
-                  </a>
-                )}
-                <button className="danger-icon-button" onClick={() => removeDocument(item)} type="button">
-                  <Trash2 size={18} />
-                </button>
+              <div className="document-row" key={item.id}>
+                <div className="document-file-icon">
+                  <FileText size={22} />
+                </div>
+                <div className="document-content">
+                  <div className="document-heading">
+                    <strong>{item.title || item.fileName || 'Tài liệu'}</strong>
+                    <span>{item.category || 'Báo cáo'}</span>
+                  </div>
+                  <p>{item.description || item.fileName || 'File PDF thống kê từ mobile'}</p>
+                  <div className="document-meta">
+                    <small>Ngày tạo: {formatDate(item.createdAt || new Date())}</small>
+                    <small>
+                      Người xuất: {item.userName || item.userEmail || item.userId || 'Không rõ'}
+                    </small>
+                    {item.periodLabel && <small>Kỳ thống kê: {item.periodLabel}</small>}
+                  </div>
+                </div>
+                <div className="document-actions">
+                  {item.fileUrl && (
+                    <a className="icon-link" href={item.fileUrl} rel="noreferrer" target="_blank" title="Mở PDF">
+                      <ExternalLink size={18} />
+                    </a>
+                  )}
+                  <button
+                    className="danger-icon-button"
+                    onClick={() => removeDocument(item)}
+                    title="Xóa PDF"
+                    type="button"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -705,20 +1036,23 @@ function DocumentsManager({ documents, onError }) {
 
 function BugReportsManager({ reports, users, onError }) {
   const [searchText, setSearchText] = useState('');
+  const [selectedReportId, setSelectedReportId] = useState('');
   const userById = useMemo(() => {
     return users.reduce((acc, user) => {
       acc[user.id] = user;
       return acc;
     }, {});
   }, [users]);
-  const visibleReports = useMemo(() => {
-    const keyword = searchText.trim().toLowerCase();
-    const enrichedReports = reports.map((report) => {
+  const enrichedReports = useMemo(() => {
+    return reports.map((report) => {
       const owner = userById[report.userId];
       const userName = report.userName || owner?.fullName || '';
       const userEmail = report.userEmail || owner?.email || '';
       return { ...report, userName, userEmail };
     });
+  }, [reports, userById]);
+  const visibleReports = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
 
     if (!keyword) return enrichedReports;
 
@@ -737,7 +1071,8 @@ function BugReportsManager({ reports, users, onError }) {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [reports, searchText, userById]);
+  }, [enrichedReports, searchText]);
+  const selectedReport = enrichedReports.find((report) => report.id === selectedReportId);
 
   async function updateStatus(report, status) {
     try {
@@ -767,46 +1102,126 @@ function BugReportsManager({ reports, users, onError }) {
           <p className="empty-text">Không tìm thấy bug report phù hợp.</p>
         ) : (
           visibleReports.map((report) => (
-            <div className="bug-row" key={report.id}>
-              <div className="bug-row-heading">
+            <div className="bug-row bug-row--compact" key={report.id}>
+              <div className="bug-row-icon">
                 <Bug size={22} />
-                <span>
-                  <strong>{report.title}</strong>
-                  <small>
-                    Người gửi: {report.userName || report.userEmail || report.userId || 'Không rõ'}
-                  </small>
-                  <small>
-                    {report.userEmail || report.userId} • {report.screenName || 'Không rõ'} •{' '}
-                    {formatDate(report.createdAt || new Date())}
-                  </small>
-                </span>
-                <Badge tone={bugStatusTone(report.status)}>
-                  {bugStatusLabel(report.status)}
-                </Badge>
               </div>
-              <p>{report.description}</p>
-              <div className="bug-row-actions">
-                {report.imageUrl && (
-                  <a className="ghost-button" href={report.imageUrl} rel="noreferrer" target="_blank">
-                    <ExternalLink size={18} />
-                    Xem ảnh
-                  </a>
-                )}
-                <select
-                  value={report.status}
-                  onChange={(event) => updateStatus(report, event.target.value)}
+              <div className="bug-row-main">
+                <div className="bug-row-heading">
+                  <div>
+                    <strong>{report.title || 'Lỗi chưa đặt tên'}</strong>
+                    <small>{report.screenName || 'Không rõ màn hình'} • {formatDate(report.createdAt || new Date())}</small>
+                  </div>
+                  <Badge tone={bugStatusTone(report.status)}>
+                    {bugStatusLabel(report.status)}
+                  </Badge>
+                </div>
+              </div>
+              <div className="bug-compact-actions">
+                <button
+                  className="icon-link"
+                  onClick={() => setSelectedReportId(report.id)}
+                  title="Xem chi tiết"
+                  type="button"
                 >
-                  <option value="pending">Chờ xử lý</option>
-                  <option value="in_progress">Đang xử lý</option>
-                  <option value="resolved">Đã xử lý</option>
-                  <option value="rejected">Từ chối</option>
-                </select>
+                  <Eye size={18} />
+                </button>
               </div>
             </div>
           ))
         )}
       </div>
+      {selectedReport && (
+        <BugReportDetailModal
+          report={selectedReport}
+          onClose={() => setSelectedReportId('')}
+          onUpdateStatus={updateStatus}
+        />
+      )}
     </Panel>
+  );
+}
+
+function BugReportDetailModal({ report, onClose, onUpdateStatus }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card modal-card--bug" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Chi tiết lỗi</h2>
+          <button className="modal-close" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <div className="bug-detail-head">
+            <div className="bug-row-icon">
+              <Bug size={22} />
+            </div>
+            <div>
+              <h3>{report.title || 'Lỗi chưa đặt tên'}</h3>
+              <p>{report.screenName || 'Không rõ màn hình'} • {formatDate(report.createdAt || new Date())}</p>
+            </div>
+            <Badge tone={bugStatusTone(report.status)}>
+              {bugStatusLabel(report.status)}
+            </Badge>
+          </div>
+
+          <div className="bug-detail-grid">
+            <div>
+              <span>Người gửi</span>
+              <strong>{report.userName || report.userEmail || report.userId || 'Không rõ'}</strong>
+            </div>
+            <div>
+              <span>Email</span>
+              <strong>{report.userEmail || 'Không có'}</strong>
+            </div>
+            <div>
+              <span>Màn hình</span>
+              <strong>{report.screenName || 'Không rõ'}</strong>
+            </div>
+            <div>
+              <span>Mức độ</span>
+              <strong>{bugSeverityLabel(report.severity)}</strong>
+            </div>
+            <div>
+              <span>Ngày gửi</span>
+              <strong>{formatDate(report.createdAt || new Date())}</strong>
+            </div>
+            <div>
+              <span>UID</span>
+              <strong>{report.userId || 'Không rõ'}</strong>
+            </div>
+          </div>
+
+          <div className="bug-detail-description">
+            <span>Mô tả lỗi</span>
+            <p>{report.description || 'Chưa có mô tả chi tiết.'}</p>
+          </div>
+
+          <div className="bug-detail-actions">
+            {report.imageUrl && (
+              <a className="ghost-button" href={report.imageUrl} rel="noreferrer" target="_blank">
+                <ExternalLink size={18} />
+                Xem ảnh đính kèm
+              </a>
+            )}
+            <label>
+              Trạng thái xử lý
+              <select
+                value={report.status}
+                onChange={(event) => onUpdateStatus(report, event.target.value)}
+              >
+                <option value="pending">Chờ xử lý</option>
+                <option value="in_progress">Đang xử lý</option>
+                <option value="resolved">Đã xử lý</option>
+                <option value="rejected">Từ chối</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2171,6 +2586,9 @@ function normalizeUser(snapshot) {
     fullName: data.fullName || '',
     email: data.email || '',
     avatarUrl: data.avatarUrl || '',
+    phoneNumber: data.phoneNumber || '',
+    position: data.position || '',
+    adminNote: data.adminNote || '',
     role: data.role || 'user',
     status: data.status || 'active',
     hasCompletedOnboarding: Boolean(data.hasCompletedOnboarding),
@@ -2304,6 +2722,106 @@ function buildCampaignStats(campaigns, recipients) {
   });
 }
 
+function buildGlobalSearchResults(keyword, data) {
+  const normalizedKeyword = normalizeSearchText(keyword);
+  if (!normalizedKeyword) return [];
+
+  const candidates = [
+    ...data.users.map((user) => ({
+      id: user.id,
+      type: 'user',
+      typeLabel: 'Người dùng',
+      view: 'users',
+      item: user,
+      title: user.fullName || user.email || 'Người dùng',
+      description: user.email || user.id,
+      text: [user.fullName, user.email, user.id, user.status].join(' '),
+    })),
+    ...data.transactions.map((transaction) => ({
+      id: transaction.id,
+      type: 'transaction',
+      typeLabel: 'Giao dịch',
+      view: 'reports',
+      item: transaction,
+      title: transaction.title || transaction.category || 'Giao dịch',
+      description: `${transaction.type === 'income' ? 'Thu' : 'Chi'} • ${formatVnd(transaction.amount)} • ${formatDate(transaction.transactionDate)}`,
+      text: [
+        transaction.title,
+        transaction.category,
+        transaction.note,
+        transaction.paymentMethod,
+        transaction.type,
+        transaction.userId,
+      ].join(' '),
+    })),
+    ...data.documents.map((document) => ({
+      id: document.id,
+      type: 'document',
+      typeLabel: 'Tài liệu',
+      view: 'documents',
+      item: document,
+      title: document.title || document.fileName || 'Tài liệu PDF',
+      description: `${document.userName || document.userEmail || 'Không rõ người xuất'} • ${formatDate(document.createdAt || new Date())}`,
+      text: [
+        document.title,
+        document.fileName,
+        document.description,
+        document.category,
+        document.userName,
+        document.userEmail,
+        document.userId,
+        document.periodLabel,
+      ].join(' '),
+    })),
+    ...data.bugReports.map((bug) => ({
+      id: bug.id,
+      type: 'bug',
+      typeLabel: 'Bug',
+      view: 'bugs',
+      item: bug,
+      title: bug.title || 'Bug report',
+      description: `${bug.screenName || 'Không rõ màn hình'} • ${bugStatusLabel(bug.status)}`,
+      text: [
+        bug.title,
+        bug.description,
+        bug.screenName,
+        bug.userName,
+        bug.userEmail,
+        bug.userId,
+        bug.status,
+        bug.severity,
+      ].join(' '),
+    })),
+    ...data.campaigns.map((campaign) => ({
+      id: campaign.id,
+      type: 'campaign',
+      typeLabel: 'Campaign',
+      view: 'campaigns',
+      item: campaign,
+      title: campaign.title || 'Campaign thông báo',
+      description: `${campaign.sentCount || 0} gửi thành công • ${campaign.readCount || 0} đã đọc`,
+      text: [
+        campaign.title,
+        campaign.body,
+        campaign.status,
+        campaign.targetType,
+      ].join(' '),
+    })),
+  ];
+
+  return candidates
+    .filter((candidate) => normalizeSearchText(candidate.text).includes(normalizedKeyword))
+    .slice(0, 8);
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
 function bugStatusLabel(status) {
   if (status === 'in_progress') return 'Đang xử lý';
   if (status === 'resolved') return 'Đã xử lý';
@@ -2315,6 +2833,13 @@ function bugStatusTone(status) {
   if (status === 'resolved') return 'primary';
   if (status === 'rejected') return 'danger';
   return 'muted';
+}
+
+function bugSeverityLabel(severity) {
+  if (severity === 'low') return 'Thấp';
+  if (severity === 'high') return 'Cao';
+  if (severity === 'critical') return 'Nghiêm trọng';
+  return 'Trung bình';
 }
 
 function toDate(value) {
