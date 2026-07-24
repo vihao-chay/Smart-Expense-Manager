@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/firestore_repository.dart';
+import '../../data/services/notification_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -58,7 +59,12 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      final route = profile != null && !profile.hasCompletedOnboarding
+      final openedFromNotification =
+          await NotificationService.instance.consumeInitialNotificationTap();
+      if (!mounted) return;
+      final route = openedFromNotification
+          ? AppRoutes.home
+          : profile != null && !profile.hasCompletedOnboarding
           ? AppRoutes.onboarding
           : AppRoutes.home;
       Navigator.of(context).pushReplacementNamed(route);

@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'app/app_navigator.dart';
 import 'app/app_routes.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
@@ -50,6 +51,7 @@ class SmartExpenseManagerApp extends StatelessWidget {
       valueListenable: ThemeController.instance,
       builder: (context, themeMode, _) {
         return MaterialApp(
+          navigatorKey: appNavigatorKey,
           title: 'Smart Expense Manager',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
