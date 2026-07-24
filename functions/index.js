@@ -118,19 +118,30 @@ async function loadUserTokens(db, userId) {
     .doc(userId)
     .collection("devices")
     .get();
-  return snapshot.docs
-    .map((doc) => doc.get("fcmToken"))
-    .filter((token) => typeof token === "string" && token.trim())
-    .map((token) => token.trim());
+
+  const tokenMap = new Map();
+  for (const doc of snapshot.docs) {
+    const token = doc.get("fcmToken");
+    if (typeof token !== "string" || !token.trim()) continue;
+
+    const trimmed = token.trim();
+    const entry = tokenMap.get(trimmed) || { token: trimmed, refs: [] };
+    entry.refs.push(doc.ref);
+    tokenMap.set(trimmed, entry);
+  }
+
+  return Array.from(tokenMap.values());
 }
 
-async function sendToTokens(tokens, payload) {
+async function sendToTokens(tokenEntries, payload) {
   let successCount = 0;
   let failureCount = 0;
+  const invalidTokenRefs = [];
 
-  for (const tokenBatch of chunk(tokens, 500)) {
+  for (const tokenEntryBatch of chunk(tokenEntries, 500)) {
+    const tokens = tokenEntryBatch.map((entry) => entry.token);
     const message = {
-      tokens: tokenBatch,
+      tokens,
       notification: {
         title: payload.title,
         body: payload.body,
@@ -159,7 +170,16 @@ async function sendToTokens(tokens, payload) {
     const result = await getMessaging().sendEachForMulticast(message);
     successCount += result.successCount;
     failureCount += result.failureCount;
+
+    result.responses.forEach((response, index) => {
+      if (response.success) return;
+      const code = response.error?.code || "";
+      if (!isInvalidFcmTokenError(code)) return;
+      invalidTokenRefs.push(...tokenEntryBatch[index].refs);
+    });
   }
+
+  await deleteInvalidTokenRefs(invalidTokenRefs);
 
   return { successCount, failureCount };
 }
@@ -170,6 +190,27 @@ function chunk(items, size) {
     result.push(items.slice(index, index + size));
   }
   return result;
+}
+
+function isInvalidFcmTokenError(code) {
+  return [
+    "messaging/invalid-registration-token",
+    "messaging/registration-token-not-registered",
+    "messaging/invalid-argument",
+  ].includes(code);
+}
+
+async function deleteInvalidTokenRefs(refs) {
+  if (refs.length === 0) return;
+
+  const uniqueRefs = Array.from(new Map(refs.map((ref) => [ref.path, ref])).values());
+  for (const refBatch of chunk(uniqueRefs, 450)) {
+    const batch = getFirestore().batch();
+    for (const ref of refBatch) {
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
 }
 
 exports.generateaiinsights = onCall(
@@ -342,10 +383,22 @@ exports.sendNotificationCampaign = onCall(
         createdAt: FieldValue.serverTimestamp(),
       });
 
-      const tokens = await loadUserTokens(db, userId);
-      if (tokens.length === 0) continue;
+      const tokenEntries = await loadUserTokens(db, userId);
+      if (tokenEntries.length === 0) {
+        failedCount++;
+        await campaignRef.collection("recipients").doc(userId).set(
+          {
+            deliveryStatus: "no-token",
+            pushSuccessCount: 0,
+            pushFailureCount: 0,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        continue;
+      }
 
-      const result = await sendToTokens(tokens, {
+      const result = await sendToTokens(tokenEntries, {
         title,
         body,
         type,
@@ -353,8 +406,23 @@ exports.sendNotificationCampaign = onCall(
         notificationId: notificationRef.id,
         data,
       });
-      sentCount += result.successCount;
-      failedCount += result.failureCount;
+
+      const delivered = result.successCount > 0;
+      if (delivered) {
+        sentCount++;
+      } else {
+        failedCount++;
+      }
+
+      await campaignRef.collection("recipients").doc(userId).set(
+        {
+          deliveryStatus: delivered ? "sent" : "failed",
+          pushSuccessCount: result.successCount,
+          pushFailureCount: result.failureCount,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
     }
 
     await campaignRef.set(
