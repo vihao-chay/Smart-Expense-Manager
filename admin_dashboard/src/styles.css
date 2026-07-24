@@ -1189,12 +1189,75 @@ button {
   outline: none;
 }
 
-.document-search {
+.management-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
+}
+
+.management-toolbar .search-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-search {
+  margin-bottom: 0;
 }
 
 .document-list {
   gap: 12px;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e2ece8;
+  color: #52645f;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-current {
+  min-width: 88px;
+  text-align: center;
+  color: #40504c;
+  font-weight: 600;
+}
+
+.pagination-button {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfe0da;
+  border-radius: 8px;
+  color: #00796b;
+  background: #f8fbf9;
+  cursor: pointer;
+}
+
+.pagination-button:hover:not(:disabled) {
+  border-color: #9fc9bd;
+  background: #e5f6f1;
+}
+
+.pagination-button:disabled {
+  color: #9cadA7;
+  background: #f1f5f3;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .document-row {
@@ -2596,6 +2659,24 @@ button {
 
   .topbar-user-menu {
     width: 154px;
+  }
+
+  .management-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .management-toolbar .user-count-badge {
+    justify-content: center;
+  }
+
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-actions {
+    justify-content: space-between;
   }
 
   .user-row {

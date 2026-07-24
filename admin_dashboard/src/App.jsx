@@ -6,6 +6,8 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   ExternalLink,
   Eye,
@@ -55,6 +57,7 @@ const currency = new Intl.NumberFormat('vi-VN', {
 });
 
 const chartPalette = ['#00796b', '#d43d3d', '#2f5f9f', '#b88400', '#6d5dd3', '#5a6f69'];
+const managementPageSize = 5;
 
 const reportRangeOptions = [
   { value: 'thisMonth', label: 'Tháng này' },
@@ -942,8 +945,46 @@ function AdminProfileView({ profile, onSave }) {
   );
 }
 
+function PaginationControls({ currentPage, totalItems, totalPages, onPageChange }) {
+  const startItem = (currentPage - 1) * managementPageSize + 1;
+  const endItem = Math.min(currentPage * managementPageSize, totalItems);
+
+  return (
+    <div className="pagination-bar">
+      <span>
+        Hiển thị {startItem}-{endItem} / {totalItems}
+      </span>
+      <div className="pagination-actions">
+        <button
+          className="pagination-button"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          type="button"
+          aria-label="Trang trước"
+        >
+          <ChevronLeft size={17} />
+        </button>
+        <span className="pagination-current">
+          Trang {currentPage}/{totalPages}
+        </span>
+        <button
+          className="pagination-button"
+          disabled={currentPage >= totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          type="button"
+          aria-label="Trang sau"
+        >
+          <ChevronRight size={17} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DocumentsManager({ documents, onError }) {
   const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const hasDocumentFilter = Boolean(searchText.trim());
   const filteredDocuments = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
     if (!keyword) return documents;
@@ -962,6 +1003,19 @@ function DocumentsManager({ documents, onError }) {
         .includes(keyword);
     });
   }, [documents, searchText]);
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / managementPageSize));
+  const paginatedDocuments = useMemo(() => {
+    const startIndex = (currentPage - 1) * managementPageSize;
+    return filteredDocuments.slice(startIndex, startIndex + managementPageSize);
+  }, [filteredDocuments, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   async function removeDocument(documentItem) {
     try {
@@ -977,13 +1031,20 @@ function DocumentsManager({ documents, onError }) {
   return (
     <section className="management-grid management-grid--single">
       <Panel title="Danh sách tài liệu">
-        <div className="search-box document-search">
-          <Search size={18} />
-          <input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Tìm theo tên báo cáo, người xuất, email, UID..."
-          />
+        <div className="management-toolbar">
+          <div className="search-box document-search">
+            <Search size={18} />
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Tìm theo tên báo cáo, người xuất, email, UID..."
+            />
+          </div>
+          <span className="user-count-badge">
+            {hasDocumentFilter
+              ? `${filteredDocuments.length}/${documents.length} tài liệu`
+              : `${documents.length} tài liệu`}
+          </span>
         </div>
         <div className="admin-list document-list">
           {documents.length === 0 ? (
@@ -991,7 +1052,7 @@ function DocumentsManager({ documents, onError }) {
           ) : filteredDocuments.length === 0 ? (
             <p className="empty-text">Không tìm thấy tài liệu phù hợp.</p>
           ) : (
-            filteredDocuments.map((item) => (
+            paginatedDocuments.map((item) => (
               <div className="document-row" key={item.id}>
                 <div className="document-file-icon">
                   <FileText size={22} />
@@ -1029,6 +1090,14 @@ function DocumentsManager({ documents, onError }) {
             ))
           )}
         </div>
+        {filteredDocuments.length > managementPageSize && (
+          <PaginationControls
+            currentPage={currentPage}
+            totalItems={filteredDocuments.length}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        )}
       </Panel>
     </section>
   );
@@ -1037,6 +1106,8 @@ function DocumentsManager({ documents, onError }) {
 function BugReportsManager({ reports, users, onError }) {
   const [searchText, setSearchText] = useState('');
   const [selectedReportId, setSelectedReportId] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const hasReportFilter = Boolean(searchText.trim());
   const userById = useMemo(() => {
     return users.reduce((acc, user) => {
       acc[user.id] = user;
@@ -1072,7 +1143,20 @@ function BugReportsManager({ reports, users, onError }) {
         .includes(keyword);
     });
   }, [enrichedReports, searchText]);
+  const totalPages = Math.max(1, Math.ceil(visibleReports.length / managementPageSize));
+  const paginatedReports = useMemo(() => {
+    const startIndex = (currentPage - 1) * managementPageSize;
+    return visibleReports.slice(startIndex, startIndex + managementPageSize);
+  }, [visibleReports, currentPage]);
   const selectedReport = enrichedReports.find((report) => report.id === selectedReportId);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   async function updateStatus(report, status) {
     try {
@@ -1087,13 +1171,20 @@ function BugReportsManager({ reports, users, onError }) {
 
   return (
     <Panel title="Báo cáo lỗi từ mobile">
-      <div className="search-box document-search">
-        <Search size={18} />
-        <input
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-          placeholder="Tìm theo tên lỗi, người gửi, email, màn hình..."
-        />
+      <div className="management-toolbar">
+        <div className="search-box document-search">
+          <Search size={18} />
+          <input
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Tìm theo tên lỗi, người gửi, email, màn hình..."
+          />
+        </div>
+        <span className="user-count-badge">
+          {hasReportFilter
+            ? `${visibleReports.length}/${reports.length} lỗi`
+            : `${reports.length} lỗi`}
+        </span>
       </div>
       <div className="admin-list">
         {reports.length === 0 ? (
@@ -1101,7 +1192,7 @@ function BugReportsManager({ reports, users, onError }) {
         ) : visibleReports.length === 0 ? (
           <p className="empty-text">Không tìm thấy bug report phù hợp.</p>
         ) : (
-          visibleReports.map((report) => (
+          paginatedReports.map((report) => (
             <div className="bug-row bug-row--compact" key={report.id}>
               <div className="bug-row-icon">
                 <Bug size={22} />
@@ -1131,6 +1222,14 @@ function BugReportsManager({ reports, users, onError }) {
           ))
         )}
       </div>
+      {visibleReports.length > managementPageSize && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={visibleReports.length}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
+      )}
       {selectedReport && (
         <BugReportDetailModal
           report={selectedReport}
@@ -1232,7 +1331,44 @@ function CampaignManager({ users, campaigns, onError }) {
     targetType: 'all',
     targetUserId: '',
   });
+  const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const hasCampaignFilter = Boolean(searchText.trim());
+  const filteredCampaigns = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return campaigns;
+
+    return campaigns.filter((campaign) => {
+      return [
+        campaign.title,
+        campaign.body,
+        campaign.status,
+        campaign.targetType,
+        campaign.targetUserCount,
+        campaign.sentCount,
+        campaign.failedCount,
+        campaign.openedCount,
+        campaign.readCount,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword);
+    });
+  }, [campaigns, searchText]);
+  const totalPages = Math.max(1, Math.ceil(filteredCampaigns.length / managementPageSize));
+  const paginatedCampaigns = useMemo(() => {
+    const startIndex = (currentPage - 1) * managementPageSize;
+    return filteredCampaigns.slice(startIndex, startIndex + managementPageSize);
+  }, [filteredCampaigns, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   async function sendCampaign(event) {
     event.preventDefault();
@@ -1313,11 +1449,28 @@ function CampaignManager({ users, campaigns, onError }) {
       </Panel>
 
       <Panel title="Thống kê campaign">
+        <div className="management-toolbar">
+          <div className="search-box document-search">
+            <Search size={18} />
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Tìm theo tiêu đề, nội dung, trạng thái..."
+            />
+          </div>
+          <span className="user-count-badge">
+            {hasCampaignFilter
+              ? `${filteredCampaigns.length}/${campaigns.length} campaign`
+              : `${campaigns.length} campaign`}
+          </span>
+        </div>
         <div className="admin-list">
           {campaigns.length === 0 ? (
             <p className="empty-text">Chưa có campaign nào.</p>
+          ) : filteredCampaigns.length === 0 ? (
+            <p className="empty-text">Không tìm thấy campaign phù hợp.</p>
           ) : (
-            campaigns.map((campaign) => (
+            paginatedCampaigns.map((campaign) => (
               <div className="campaign-row" key={campaign.id}>
                 <strong>{campaign.title}</strong>
                 <p>{campaign.body}</p>
@@ -1332,6 +1485,14 @@ function CampaignManager({ users, campaigns, onError }) {
             ))
           )}
         </div>
+        {filteredCampaigns.length > managementPageSize && (
+          <PaginationControls
+            currentPage={currentPage}
+            totalItems={filteredCampaigns.length}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        )}
       </Panel>
     </section>
   );
