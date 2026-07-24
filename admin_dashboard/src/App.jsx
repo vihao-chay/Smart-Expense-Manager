@@ -1609,7 +1609,7 @@ function ReportRangeControls({
 }
 
 function RecentActivity({ transactions }) {
-  const latest = transactions.slice(0, 8);
+  const latest = transactions.slice(0, 5);
   if (latest.length === 0) {
     return <p className="empty-text">Chưa có giao dịch nào.</p>;
   }
@@ -1685,6 +1685,23 @@ function UserTableView({ users, queryText, onQueryChange, transactions, budgets,
   const [detailUser, setDetailUser] = useState(null);
   const [notifyUser, setNotifyUser] = useState(null);
   const [savingId, setSavingId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(users.length / managementPageSize));
+  const pageStartIndex = (currentPage - 1) * managementPageSize;
+  const paginatedUsers = useMemo(
+    () => users.slice(pageStartIndex, pageStartIndex + managementPageSize),
+    [users, pageStartIndex],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [queryText]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   async function toggleLock(user) {
     setSavingId(user.id);
@@ -1736,9 +1753,9 @@ function UserTableView({ users, queryText, onQueryChange, transactions, budgets,
                 <td colSpan={6} className="table-empty">Không tìm thấy người dùng nào.</td>
               </tr>
             )}
-            {users.map((user, index) => (
+            {paginatedUsers.map((user, index) => (
               <tr key={user.id} className={user.status === 'locked' ? 'row-locked' : ''}>
-                <td className="col-index">{index + 1}</td>
+                <td className="col-index">{pageStartIndex + index + 1}</td>
                 <td className="col-user">
                   <Avatar user={user} />
                   <span>
@@ -1782,6 +1799,15 @@ function UserTableView({ users, queryText, onQueryChange, transactions, budgets,
           </tbody>
         </table>
       </div>
+
+      {users.length > managementPageSize && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={users.length}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
+      )}
 
       {detailUser && (
         <UserDetailModal
